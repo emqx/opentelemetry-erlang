@@ -43,8 +43,8 @@ to_proto_by_scope(Metrics) ->
                                    maps:update_with(Scope, fun(List) -> [Proto | List] end, [Proto], Acc)
                            end, #{}, Metrics),
     maps:fold(fun(Scope, MetricsProto, Acc) ->
-                      [case Scope#instrumentation_scope.schema_url of
-                           undefined ->
+                      [case Scope =/= undefined andalso Scope#instrumentation_scope.schema_url of
+                           NoUrl when NoUrl =:= undefined orelse NoUrl =:= false ->
                                #{scope => otel_otlp_common:to_instrumentation_scope_proto(Scope),
                                  metrics => MetricsProto};
                            SchemaUrl ->
