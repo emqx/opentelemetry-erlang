@@ -354,8 +354,8 @@ export(_, _Tab, _Resource, _State) ->
 %% @doc Shutdown the exporter.
 shutdown(#state{channel_pid=undefined}) ->
     ok;
-shutdown(#state{channel_pid=Pid}) ->
-    _ = grpcbox_channel:stop(Pid),
+shutdown(#state{channel=Channel}) ->
+    _ = grpcbox_channel:stop(Channel),
     ok.
 
 %%
