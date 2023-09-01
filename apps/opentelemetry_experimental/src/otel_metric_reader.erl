@@ -33,6 +33,7 @@
          handle_cast/2,
          handle_info/2,
          handle_continue/2,
+         terminate/2,
          code_change/1]).
 
 -include_lib("opentelemetry_api/include/opentelemetry.hrl").
@@ -70,6 +71,7 @@ shutdown(ReaderPid) ->
     gen_server:call(ReaderPid, shutdown).
 
 init([ReaderId, ProviderSup, Config]) ->
+    erlang:process_flag(trap_exit, true),
     ExporterModuleConfig = maps:get(exporter, Config, undefined),
     Exporter = otel_exporter:init(ExporterModuleConfig),
 
@@ -162,6 +164,10 @@ handle_info(collect, State=#state{id=ReaderId,
 %% no tref or exporter, do nothing at all
 handle_info(_, State) ->
     {noreply, State}.
+
+terminate(_Reason, #state{exporter = Exporter}) ->
+    ok = otel_exporter:shutdown(Exporter),
+    ok.
 
 code_change(State) ->
     {ok, State}.
