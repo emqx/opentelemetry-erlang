@@ -32,11 +32,105 @@
 
 -export_type([t/0]).
 
--define(DEFAULT_BOUNDARIES, [0.0, 5.0, 10.0, 25.0, 50.0, 75.0, 100.0, 250.0, 500.0, 1000.0]).
+-define(DEFAULT_BOUNDARIES, [0.0, 5.0, 10.0, 25.0, 50.0, 75.0, 100.0, 250.0, 500.0, 750.0, 1000.0, 2500.0, 5000.0, 7500.0, 10000.0]).
 
 -include_lib("stdlib/include/ms_transform.hrl").
 
 -define(MIN_DOUBLE, -9223372036854775807.0). %% the proto representation of size `fixed64'
+
+%% since we need the Key in the MatchHead for the index to be used we
+%% can't use `ets:fun2ms' as it will shadow `Key' in the `fun' head
+-if(?OTP_RELEASE >= 26).
+-define(AGGREATE_MATCH_SPEC(Key, Value, BucketCounts),
+    [
+        {
+            {explicit_histogram_aggregation,Key,'_','_','_','_','_','$1','$2','$3'},
+            [],
+            [{{
+                explicit_histogram_aggregation,
+                {element,2,'$_'},
+                {element,3,'$_'},
+                {element,4,'$_'},
+                {element,5,'$_'},
+                {element,6,'$_'},
+                {const,BucketCounts},
+                {min,'$1',{const,Value}},
+                {max,'$2',{const,Value}},
+                {'+','$3',{const,Value}}
+            }}]
+        }
+    ]
+).
+-else.
+-define(AGGREATE_MATCH_SPEC(Key, Value, BucketCounts),
+    [
+        {
+            {explicit_histogram_aggregation,Key,'_','_','_','_','_','$1','$2','$3'},
+            [{'<','$2',{const,Value}},{'>','$1',{const,Value}}],
+            [{{
+                explicit_histogram_aggregation,
+                {element,2,'$_'},
+                {element,3,'$_'},
+                {element,4,'$_'},
+                {element,5,'$_'},
+                {element,6,'$_'},
+                {const,BucketCounts},
+                {const,Value},
+                {const,Value},
+                {'+','$3',{const,Value}}
+            }}]
+        },
+        {
+            {explicit_histogram_aggregation,Key,'_','_','_','_','_','_','$1','$2'},
+            [{'<','$1',{const,Value}}],
+            [{{
+                explicit_histogram_aggregation,
+                {element,2,'$_'},
+                {element,3,'$_'},
+                {element,4,'$_'},
+                {element,5,'$_'},
+                {element,6,'$_'},
+                {const,BucketCounts},
+                {element,8,'$_'},
+                {const,Value},
+                {'+','$2',{const,Value}}
+            }}]
+        },
+        {
+            {explicit_histogram_aggregation,Key,'_','_','_','_','_','$1','_','$2'},
+            [{'>','$1',{const,Value}}],
+            [{{
+                explicit_histogram_aggregation,
+                {element,2,'$_'},
+                {element,3,'$_'},
+                {element,4,'$_'},
+                {element,5,'$_'},
+                {element,6,'$_'},
+                {const,BucketCounts},
+                {const,Value},
+                {element,9,'$_'},
+                {'+','$2',{const,Value}}
+            }}]
+        },
+        {
+            {explicit_histogram_aggregation,Key,'_','_','_','_','_','_','_','$1'},
+            [],
+            [{{
+                explicit_histogram_aggregation,
+                {element,2,'$_'},
+                {element,3,'$_'},
+                {element,4,'$_'},
+                {element,5,'$_'},
+                {element,6,'$_'},
+                {const,BucketCounts},
+                {element,8,'$_'},
+                {element,9,'$_'},
+                {'+','$1',{const,Value}}
+            }}]
+        }
+    ]
+).
+-endif.
 
 init(#view_aggregation{name=Name,
                        reader=ReaderId,
@@ -72,56 +166,7 @@ aggregate(Table, #view_aggregation{name=Name,
             BucketIdx = find_bucket(Boundaries, Value),
             counters:add(BucketCounts, BucketIdx, 1),
 
-            %% since we need the Key in the MatchHead for the index to be used we
-            %% can't use `ets:fun2ms' as it will shadow `Key' in the `fun' head
-            MS = [{{explicit_histogram_aggregation,Key,'_','_','_','_','_','$1','$2','$3'},
-                   [{'<','$2',{const,Value}},{'>','$1',{const,Value}}],
-                   [{{explicit_histogram_aggregation,
-                      {element,2,'$_'},
-                      {element,3,'$_'},
-                      {element,4,'$_'},
-                      {element,5,'$_'},
-                      {element,6,'$_'},
-                      {const,BucketCounts},
-                      {const,Value},
-                      {const,Value},
-                      {'+','$3',{const,Value}}}}]},
-                  {{explicit_histogram_aggregation,Key,'_','_','_','_','_','_','$1','$2'},
-                   [{'<','$1',{const,Value}}],
-                   [{{explicit_histogram_aggregation,
-                      {element,2,'$_'},
-                      {element,3,'$_'},
-                      {element,4,'$_'},
-                      {element,5,'$_'},
-                      {element,6,'$_'},
-                      {const,BucketCounts},
-                      {element,8,'$_'},
-                      {const,Value},
-                      {'+','$2',{const,Value}}}}]},
-                  {{explicit_histogram_aggregation,Key,'_','_','_','_','_','$1','_','$2'},
-                   [{'>','$1',{const,Value}}],
-                   [{{explicit_histogram_aggregation,
-                      {element,2,'$_'},
-                      {element,3,'$_'},
-                      {element,4,'$_'},
-                      {element,5,'$_'},
-                      {element,6,'$_'},
-                      {const,BucketCounts},
-                      {const,Value},
-                      {element,9,'$_'},
-                      {'+','$2',{const,Value}}}}]},
-                  {{explicit_histogram_aggregation,Key,'_','_','_','_','_','_','_','$1'},
-                   [],
-                   [{{explicit_histogram_aggregation,
-                      {element,2,'$_'},
-                      {element,3,'$_'},
-                      {element,4,'$_'},
-                      {element,5,'$_'},
-                      {element,6,'$_'},
-                      {const,BucketCounts},
-                      {element,8,'$_'},
-                      {element,9,'$_'},
-                      {'+','$1',{const,Value}}}}]}],
+            MS = ?AGGREATE_MATCH_SPEC(Key, Value, BucketCounts),
             1 =:= ets:select_replace(Table, MS)
     catch
         error:badarg->
@@ -235,8 +280,6 @@ find_bucket(Boundaries, Value) ->
 
 find_bucket([X | _Rest], Value, Pos) when Value =< X ->
     Pos;
-find_bucket([_X], _Value, Pos) ->
-    Pos;
 find_bucket([_X | Rest], Value, Pos) ->
     find_bucket(Rest, Value, Pos+1);
 find_bucket(_, _, Pos) ->
@@ -245,7 +288,7 @@ find_bucket(_, _, Pos) ->
 get_buckets(BucketCounts, Boundaries) ->
     lists:foldl(fun(Idx, Acc) ->
                         Acc ++ [counters_get(BucketCounts, Idx)]
-                end, [], lists:seq(1, length(Boundaries))).
+                end, [], lists:seq(1, length(Boundaries) + 1)).
 
 counters_get(undefined, _) ->
     0;
@@ -253,4 +296,4 @@ counters_get(Counter, Idx) ->
     counters:get(Counter, Idx).
 
 new_bucket_counts(Boundaries) ->
-    counters:new(length(Boundaries), [write_concurrency]).
+    counters:new(length(Boundaries) + 1, [write_concurrency]).

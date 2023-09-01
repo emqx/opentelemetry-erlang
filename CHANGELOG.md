@@ -7,7 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## API
+
+### Changes
+
+- [Add `otel_tracestate` module for creating and updating
+  tracestate](https://github.com/open-telemetry/opentelemetry-erlang/pull/607)
+- [Attributes module `otel_attributes` moved to
+  API](https://github.com/open-telemetry/opentelemetry-erlang/pull/618)
+- [Moved attribute processing functions to `otel_attributes` from
+  `otel_span`](https://github.com/open-telemetry/opentelemetry-erlang/pull/620)
+
 ## SDK
+
+### Changes
+
+- [Attributes module `otel_attributes` moved to
+  API](https://github.com/open-telemetry/opentelemetry-erlang/pull/618)
+
+## Experimental API
+
+### Changes
+
+- [Allow to create observable instruments without passing callback arguments](https://github.com/open-telemetry/opentelemetry-erlang/pull/604)
+
+## Experimental SDK
+
+### Added
+
+- [Add `instrument_unit` to view criteria](https://github.com/open-telemetry/opentelemetry-erlang/pull/604)
+- [Validate instrument name](https://github.com/open-telemetry/opentelemetry-erlang/pull/604)
+
+### Changes
+
+- [Align histogram default boundaries with specification](https://github.com/open-telemetry/opentelemetry-erlang/pull/614)
+
+### Fixes
+
+ - [Correctly record histogram values greater than last boundary](https://github.com/open-telemetry/opentelemetry-erlang/pull/614)
+ - [Readers should use a default cumulative temporality if not specified](https://github.com/open-telemetry/opentelemetry-erlang/pull/613)
+
+## SDK 1.3.1 - 2023-08-15
 
 ### Added
 
@@ -22,11 +62,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Provider](https://github.com/open-telemetry/opentelemetry-erlang/pull/568)
 - [Global Tracer no longer set to no-op on SDK
   shutdown](https://github.com/open-telemetry/opentelemetry-erlang/pull/568)
+- [Remove use of `deprecated` module attribute to support
+  OTP-22](https://github.com/open-telemetry/opentelemetry-erlang/pull/603)
 
 ### Fixes
 
 - [Fixed parsing of key/value list configuration where value has = in
   it](https://github.com/open-telemetry/opentelemetry-erlang/pull/596)
+
+## API 1.2.2 - 2023-08-15
+
+### Changes
+
+- [Remove use of `deprecated` module attribute to support
+  OTP-22](https://github.com/open-telemetry/opentelemetry-erlang/pull/603)
 
 ## Exporter 1.6.0 - 2023-06-21
 

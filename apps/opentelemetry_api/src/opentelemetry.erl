@@ -130,7 +130,7 @@
 -type link()               :: #{trace_id   := trace_id(),
                                 span_id    := span_id(),
                                 attributes := attributes_map(),
-                                tracestate := tracestate()}.
+                                tracestate := otel_tracestate:t()}.
 -type status()             :: #status{}.
 -type status_code()        :: ?OTEL_STATUS_UNSET | ?OTEL_STATUS_OK | ?OTEL_STATUS_ERROR.
 
@@ -140,7 +140,7 @@
 %% The value is opaque string up to 256 characters printable ASCII
 %% RFC0020 characters (i.e., the range 0x20 to 0x7E) except ',' and '='.
 %% Note that this also excludes tabs, newlines, carriage returns, etc.
--type tracestate()         :: [{unicode:latin1_chardata(), unicode:latin1_chardata()}].
+-type tracestate()         :: otel_tracestate:t().
 
 -type resource()           :: #{unicode:unicode_binary() => unicode:unicode_binary()}.
 
@@ -152,10 +152,12 @@
 -define(TEXT_MAP_EXTRACTOR_KEY, {?MODULE, text_map_extractor}).
 -define(TEXT_MAP_INJECTOR_KEY, {?MODULE, text_map_injector}).
 
--deprecated({start_tracer_provider, 2, "start the TracerProvider through the SDK"}).
+%% uncomment when OTP-23 becomes the minimum required version
+%% -deprecated({start_tracer_provider, 2, "start the TracerProvider through the SDK"}).
 
 -include("gradualizer.hrl").
 
+%% @deprecated Start the TracerProvider through the SDK"
 -spec start_tracer_provider(atom(), map()) -> {ok, pid() | undefined} | {error, term()}.
 start_tracer_provider(Name, Config) ->
     otel_tracer_provider:start(Name, Config).
@@ -334,23 +336,20 @@ convert_timestamp(Timestamp, Unit) ->
       TraceId :: trace_id(),
       SpanId :: span_id(),
       Attributes :: attributes_map(),
-      TraceState :: tracestate().
+      TraceState :: otel_tracestate:t() | [{string(), string()}].
 links(List) when is_list(List) ->
     lists:filtermap(fun({TraceId, SpanId, Attributes, TraceState}) when is_integer(TraceId) ,
-                                                                        is_integer(SpanId) ,
-                                                                        is_list(TraceState) ->
-                            link_or_false(TraceId, SpanId, otel_span:process_attributes(Attributes), TraceState);
+                                                                        is_integer(SpanId) ->
+                            link_or_false(TraceId, SpanId, otel_attributes:process_attributes(Attributes), TraceState);
                        ({#span_ctx{trace_id=TraceId,
                                    span_id=SpanId,
                                    tracestate=TraceState}, Attributes}) when is_integer(TraceId) ,
-                                                                             is_integer(SpanId) ,
-                                                                             is_list(TraceState) ->
-                            link_or_false(TraceId, SpanId, otel_span:process_attributes(Attributes), TraceState);
+                                                                             is_integer(SpanId) ->
+                            link_or_false(TraceId, SpanId, otel_attributes:process_attributes(Attributes), TraceState);
                        (#span_ctx{trace_id=TraceId,
                                   span_id=SpanId,
                                   tracestate=TraceState}) when is_integer(TraceId) ,
-                                                               is_integer(SpanId) ,
-                                                               is_list(TraceState) ->
+                                                               is_integer(SpanId) ->
                             link_or_false(TraceId, SpanId, [], TraceState);
                        (_) ->
                             false
@@ -366,7 +365,7 @@ link(SpanCtx) ->
 link(#span_ctx{trace_id=TraceId,
                span_id=SpanId,
                tracestate=TraceState}, Attributes) ->
-    ?MODULE:link(TraceId, SpanId, otel_span:process_attributes(Attributes), TraceState);
+    ?MODULE:link(TraceId, SpanId, otel_attributes:process_attributes(Attributes), TraceState);
 link(_, _) ->
     undefined.
 
@@ -374,14 +373,13 @@ link(_, _) ->
       TraceId :: trace_id(),
       SpanId :: span_id(),
       Attributes :: attributes_map(),
-      TraceState :: tracestate().
+      TraceState :: otel_tracestate:t() | otel_tracestate:members().
 link(TraceId, SpanId, Attributes, TraceState) when is_integer(TraceId),
                                                    is_integer(SpanId),
-                                                   (is_list(Attributes) orelse is_map(Attributes)),
-                                                   is_list(TraceState) ->
+                                                   (is_list(Attributes) orelse is_map(Attributes)) ->
     #{trace_id => TraceId,
       span_id => SpanId,
-      attributes => otel_span:process_attributes(Attributes),
+      attributes => otel_attributes:process_attributes(Attributes),
       tracestate => TraceState};
 link(_, _, _, _) ->
     undefined.
@@ -403,7 +401,7 @@ event(Timestamp, Name, Attributes) when is_integer(Timestamp),
         true ->
             #{system_time_native => Timestamp,
               name => Name,
-              attributes => otel_span:process_attributes(Attributes)};
+              attributes => otel_attributes:process_attributes(Attributes)};
         false ->
             undefined
     end;
@@ -476,6 +474,9 @@ verify_module_exists(Module) ->
 
 %% for use in a filtermap
 %% return {true, Link} if a link is returned or return false
+%% a list is supported for tracestate for backwards compatibility
+link_or_false(TraceId, SpanId, Attributes, TraceState) when is_list(TraceState) ->
+    link_or_false(TraceId, SpanId, Attributes, otel_tracestate:new(TraceState));
 link_or_false(TraceId, SpanId, Attributes, TraceState) ->
     case link(TraceId, SpanId, Attributes, TraceState) of
         Link=#{}->

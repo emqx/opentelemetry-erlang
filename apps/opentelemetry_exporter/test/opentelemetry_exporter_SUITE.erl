@@ -76,7 +76,7 @@ verify_metrics_export(Config) ->
                        name = <<"sum name">>,
                        description = <<"some sum description">>,
                        unit = kb,
-                       data = #sum{aggregation_temporality = 'AGGREGATION_TEMPORALITY_CUMULATIVE',
+                       data = #sum{aggregation_temporality = temporality_cumulative,
                                    is_monotonic=true,
                                    datapoints=[#datapoint{
                                                   attributes=otel_attributes:new(#{<<"key-1">> => <<"value-1">>},
@@ -126,7 +126,7 @@ verify_metrics_export(Config) ->
                        name = <<"histogram name">>,
                        description = <<"some histogram description">>,
                        unit = kb,
-                       data = #histogram{aggregation_temporality = 'AGGREGATION_TEMPORALITY_CUMULATIVE',
+                       data = #histogram{aggregation_temporality = temporality_cumulative,
                                          datapoints=[#histogram_datapoint{
                                                         attributes=otel_attributes:new(#{<<"key-1">> => <<"value-1">>},
                                                                                        128, 128),
@@ -398,7 +398,7 @@ span_round_trip(_Config) ->
               trace_id = TraceId,
               span_id = SpanId,
               kind = ?SPAN_KIND_CLIENT,
-              tracestate = [{<<"ts-attr-1">>, <<"ts-value-1">>}],
+              tracestate = otel_tracestate:new([{"ts-attr-1", "ts-value-1"}]),
               start_time = opentelemetry:timestamp(),
               end_time = opentelemetry:timestamp(),
               links = otel_links:new([], 128, 128, 128),

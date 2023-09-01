@@ -97,7 +97,8 @@ init_per_testcase(provider_test, Config) ->
     application:load(opentelemetry_experimental),
     ok = application:set_env(opentelemetry_experimental, readers,
                              [#{module => otel_metric_reader,
-                                config => #{exporter => {otel_metric_exporter_pid, self()}}}]),
+                                config => #{exporter => {otel_metric_exporter_pid, self()},
+                                            default_temporality_mapping => default_temporality_mapping()}}]),
     ok = application:set_env(opentelemetry_experimental, views,
                              [#{selector => #{instrument_name => a_counter},
                                 aggregation_module => otel_aggregation_sum},
@@ -117,9 +118,11 @@ init_per_testcase(multiple_readers, Config) ->
     application:load(opentelemetry_experimental),
     ok = application:set_env(opentelemetry_experimental, readers,
                              [#{module => otel_metric_reader,
-                                config => #{exporter => {otel_metric_exporter_pid, self()}}},
+                                config => #{exporter => {otel_metric_exporter_pid, self()},
+                                            default_temporality_mapping => default_temporality_mapping()}},
                               #{module => otel_metric_reader,
                                 config => #{exporter => {otel_metric_exporter_pid, self()},
+                                            default_temporality_mapping => default_temporality_mapping(),
                                             default_aggregation_mapping =>
                                                 #{?KIND_COUNTER => otel_aggregation_drop}}}]),
 
@@ -132,13 +135,14 @@ init_per_testcase(delta_counter, Config) ->
     %% delta is the default for a counter with sum aggregation
     %% so no need to set any temporality mapping in the reader
     ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
-                                                                     config => #{exporter => {otel_metric_exporter_pid, self()}}}]),
+                                                                     config => #{exporter => {otel_metric_exporter_pid, self()},
+                                                                                 default_temporality_mapping => default_temporality_mapping()}}]),
 
     {ok, _} = application:ensure_all_started(opentelemetry_experimental),
 
     Config;
 init_per_testcase(cumulative_counter, Config) ->
-    CumulativeCounterTemporality = #{?KIND_COUNTER =>?TEMPORALITY_CUMULATIVE},
+    CumulativeCounterTemporality = maps:put(?KIND_COUNTER, ?TEMPORALITY_CUMULATIVE, default_temporality_mapping()),
     application:load(opentelemetry_experimental),
     ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
                                                                      config => #{exporter => {otel_metric_exporter_pid, self()},
@@ -149,7 +153,7 @@ init_per_testcase(cumulative_counter, Config) ->
 
     Config;
 init_per_testcase(delta_explicit_histograms, Config) ->
-    DeltaHistogramTemporality = #{?KIND_HISTOGRAM =>?TEMPORALITY_DELTA},
+    DeltaHistogramTemporality = maps:put(?KIND_HISTOGRAM, ?TEMPORALITY_DELTA, default_temporality_mapping()),
     application:load(opentelemetry_experimental),
     ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
                                                                      config => #{exporter => {otel_metric_exporter_pid, self()},
@@ -160,7 +164,7 @@ init_per_testcase(delta_explicit_histograms, Config) ->
 
     Config;
 init_per_testcase(delta_observable_counter, Config) ->
-    DeltaObservableCounterTemporality = #{?KIND_OBSERVABLE_COUNTER =>?TEMPORALITY_DELTA},
+    DeltaObservableCounterTemporality = maps:put(?KIND_OBSERVABLE_COUNTER, ?TEMPORALITY_DELTA, default_temporality_mapping()),
     application:load(opentelemetry_experimental),
     ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
                                                                      config => #{exporter => {otel_metric_exporter_pid, self()},
@@ -173,7 +177,8 @@ init_per_testcase(delta_observable_counter, Config) ->
 init_per_testcase(_, Config) ->
     application:load(opentelemetry_experimental),
     ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
-                                                                     config => #{exporter => {otel_metric_exporter_pid, self()}}}]),
+                                                                     config => #{exporter => {otel_metric_exporter_pid, self()},
+                                                                                 default_temporality_mapping => default_temporality_mapping()}}]),
 
     {ok, _} = application:ensure_all_started(opentelemetry_experimental),
 
@@ -192,6 +197,16 @@ default_resource(_Config) ->
                  otel_attributes:map(otel_resource:attributes(Resource))),
 
     ok.
+
+default_temporality_mapping() ->
+    #{
+        ?KIND_COUNTER => ?TEMPORALITY_DELTA,
+        ?KIND_OBSERVABLE_COUNTER => ?TEMPORALITY_CUMULATIVE,
+        ?KIND_UPDOWN_COUNTER => ?TEMPORALITY_DELTA,
+        ?KIND_OBSERVABLE_UPDOWNCOUNTER => ?TEMPORALITY_CUMULATIVE,
+        ?KIND_HISTOGRAM => ?TEMPORALITY_DELTA,
+        ?KIND_OBSERVABLE_GAUGE => ?TEMPORALITY_CUMULATIVE
+    }.
 
 using_macros(_Config) ->
     DefaultMeter = otel_meter_default,
@@ -311,7 +326,7 @@ float_histogram(_Config) ->
                                          min=Min,
                                          max=Max,
                                          sum=Sum}  <- Datapoints],
-            ?assertEqual([], [{#{<<"c">> => <<"b">>}, [0,1,1,2,0,0,0,0,0,0], 5, 10.3, 31.1}]
+            ?assertEqual([], [{#{<<"c">> => <<"b">>}, [0,1,1,2,0,0,0,0,0,0,0,0,0,0,0,0], 5, 10.3, 31.1}]
                          -- AttributeBuckets, AttributeBuckets)
     after
         5000 ->
@@ -425,6 +440,12 @@ view_creation_test(_Config) ->
     Matches = otel_view:match_instrument_to_views(Counter, [View]),
     ?assertMatch([_], Matches),
 
+    ViewUnitMatch = otel_view:new(#{instrument_name => CounterName, instrument_unit => CounterUnit}, #{aggregation_module => otel_aggregation_sum}),
+    ?assertMatch([{#view{}, _}], otel_view:match_instrument_to_views(Counter, [ViewUnitMatch])),
+
+    ViewUnitNotMatch = otel_view:new(#{instrument_name => CounterName, instrument_unit => not_matching}, #{aggregation_module => otel_aggregation_sum}),
+    ?assertMatch([{undefined, _}], otel_view:match_instrument_to_views(Counter, [ViewUnitNotMatch])),
+
     %% views require a unique name
     ?assert(otel_meter_server:add_view(view_b, #{instrument_name => a_counter}, #{aggregation_module => otel_aggregation_sum})),
     %% ?assertNot(otel_meter_server:add_view(view_b, #{instrument_name => a_counter}, #{aggregation_module => otel_aggregation_sum})),
@@ -508,11 +529,11 @@ explicit_histograms(_Config) ->
 
     otel_meter_server:add_view(#{instrument_name => a_histogram}, #{}),
 
-
     ?assertEqual(ok, otel_histogram:record(Histogram, 20, #{<<"c">> => <<"b">>})),
     ?assertEqual(ok, otel_histogram:record(Histogram, 30, #{<<"a">> => <<"b">>, <<"d">> => <<"e">>})),
     ?assertEqual(ok, otel_histogram:record(Histogram, 44, #{<<"c">> => <<"b">>})),
     ?assertEqual(ok, otel_histogram:record(Histogram, 100, #{<<"c">> => <<"b">>})),
+    ?assertEqual(ok, otel_histogram:record(Histogram, 20000, #{<<"c">> => <<"b">>})),
 
     otel_meter_server:force_flush(),
 
@@ -525,8 +546,8 @@ explicit_histograms(_Config) ->
                                                                                          min=Min,
                                                                                          max=Max,
                                                                                          sum=Sum}  <- Datapoints]),
-            ?assertEqual([], [{#{<<"c">> => <<"b">>}, [0,0,0,1,1,0,1,0,0,0], 20, 100, 164},
-                              {#{<<"a">> => <<"b">>, <<"d">> => <<"e">>}, [0,0,0,0,1,0,0,0,0,0], 30, 30, 30}]
+            ?assertEqual([], [{#{<<"c">> => <<"b">>}, [0,0,0,1,1,0,1,0,0,0,0,0,0,0,0,1], 20, 20000, 20164},
+                              {#{<<"a">> => <<"b">>, <<"d">> => <<"e">>}, [0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0], 30, 30, 30}]
                          -- AttributeBuckets, AttributeBuckets)
     after
         5000 ->
@@ -574,8 +595,8 @@ delta_explicit_histograms(_Config) ->
                                                                                          min=Min,
                                                                                          max=Max,
                                                                                          sum=Sum}  <- Datapoints]),
-            ?assertEqual([], [{#{<<"c">> => <<"b">>}, [0,0,0,1,1,0,1,0,0,0], 20, 100, 164},
-                              {#{<<"a">> => <<"b">>, <<"d">> => <<"e">>}, [0,0,0,0,1,0,0,0,0,0], 30, 30, 30}]
+            ?assertEqual([], [{#{<<"c">> => <<"b">>}, [0,0,0,1,1,0,1,0,0,0,0,0,0,0,0,0], 20, 100, 164},
+                              {#{<<"a">> => <<"b">>, <<"d">> => <<"e">>}, [0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0], 30, 30, 30}]
                          -- AttributeBuckets, AttributeBuckets)
     after
         5000 ->
@@ -595,9 +616,9 @@ delta_explicit_histograms(_Config) ->
                                                                               min=Min,
                                                                               max=Max,
                                                                               sum=Sum}  <- Datapoints1],
-            ?assertEqual([], [{#{<<"c">> => <<"b">>}, [0,0,0,0,0,0,1,0,0,0], 88, 88, 88},
+            ?assertEqual([], [{#{<<"c">> => <<"b">>}, [0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0], 88, 88, 88},
                               {#{<<"a">> => <<"b">>,<<"d">> => <<"e">>},
-                               [0,0,0,0,0,0,0,0,0,0],
+                               [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
                                infinity,-9.223372036854776e18,0}
                              ]
                          -- AttributeBuckets1, AttributeBuckets1)
@@ -938,15 +959,8 @@ multi_instrument_callback(_Config) ->
 
     ?assert(otel_meter_server:add_view(#{instrument_name => CounterName}, #{aggregation_module => otel_aggregation_sum})),
 
-    Counter = otel_meter:create_observable_counter(Meter, CounterName,
-                                                   undefined, [],
-                                                   #{description => CounterDesc,
-                                                     unit => Unit}),
-
-    Gauge = otel_meter:create_observable_gauge(Meter, GaugeName,
-                                               undefined, [],
-                                               #{description => GaugeDesc,
-                                                 unit => Unit}),
+    Counter = otel_observable_counter:create(Meter, CounterName, #{description => CounterDesc, unit => Unit}),
+    Gauge = otel_observable_gauge:create(Meter, GaugeName, #{description => GaugeDesc, unit => Unit}),
 
     otel_meter:register_callback(Meter, [Counter, Gauge],
                                  fun(_) ->

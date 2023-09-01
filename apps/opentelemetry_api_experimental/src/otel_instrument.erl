@@ -19,7 +19,8 @@
 
 -export([new/6,
          new/8,
-         is_monotonic/1]).
+         is_monotonic/1,
+         temporality/1]).
 
 -include("otel_metrics.hrl").
 
@@ -35,9 +36,7 @@
                            [named_observations()].
 -type callback() :: fun((callback_args()) -> callback_result()).
 
--type temporality() :: ?TEMPORALITY_UNSPECIFIED |
-                       ?TEMPORALITY_DELTA |
-                       ?TEMPORALITY_CUMULATIVE.
+-type temporality() :: ?TEMPORALITY_DELTA | ?TEMPORALITY_CUMULATIVE.
 
 -type t() :: #instrument{}.
 
@@ -51,7 +50,7 @@
               callback_args/0,
               callback_result/0]).
 
--spec new(module(), otel_meter:t(), kind(), name(), description() | undefined, unit()) -> t().
+-spec new(module(), otel_meter:t(), kind(), name(), description() | undefined, unit() | undefined) -> t().
 new(Module, Meter, Kind, Name, Description, Unit) ->
     #instrument{module      = Module,
                 meter       = Meter,
@@ -61,7 +60,7 @@ new(Module, Meter, Kind, Name, Description, Unit) ->
                 kind        = Kind,
                 unit        = Unit}.
 
--spec new(module(), otel_meter:t(), kind(), name(), description() | undefined, unit(), callback(), term()) -> t().
+-spec new(module(), otel_meter:t(), kind(), name(), description() | undefined, unit() | undefined, callback(), callback_args()) -> t().
 new(Module, Meter, Kind, Name, Description, Unit, Callback, CallbackArgs) ->
     #instrument{module        = Module,
                 meter         = Meter,
@@ -81,3 +80,16 @@ is_monotonic(#instrument{kind=?KIND_HISTOGRAM}) ->
     true;
 is_monotonic(_) ->
     false.
+
+temporality(#instrument{kind=?KIND_COUNTER}) ->
+    ?TEMPORALITY_DELTA;
+temporality(#instrument{kind=?KIND_OBSERVABLE_COUNTER}) ->
+    ?TEMPORALITY_CUMULATIVE;
+temporality(#instrument{kind=?KIND_UPDOWN_COUNTER}) ->
+    ?TEMPORALITY_DELTA;
+temporality(#instrument{kind=?KIND_OBSERVABLE_UPDOWNCOUNTER}) ->
+    ?TEMPORALITY_CUMULATIVE;
+temporality(#instrument{kind=?KIND_HISTOGRAM}) ->
+    ?TEMPORALITY_DELTA;
+temporality(#instrument{kind=?KIND_OBSERVABLE_GAUGE}) ->
+    ?TEMPORALITY_CUMULATIVE.
