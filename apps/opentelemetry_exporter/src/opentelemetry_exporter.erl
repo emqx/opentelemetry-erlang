@@ -330,23 +330,27 @@ export(metrics, Tab, Resource, #state{protocol=grpc,
             ?LOG_INFO("OTLP grpc export failed with error: ~p", [Reason]),
             error
     end;
-export(logs, {Logs, Config}, Resource, #state{channel=Channel,
+export(logs, {Tab, Config}, Resource, #state{channel=Channel,
                                               protocol=grpc,
                                               grpc_metadata=Metadata}) ->
-    ExportRequest = otel_otlp_logs:to_proto(Logs, Resource, Config),
-    Ctx = grpcbox_metadata:append_to_outgoing_ctx(ctx:new(), Metadata),
-    case opentelemetry_logs_service:export(Ctx, ExportRequest, #{channel => Channel}) of
-        {ok, _Response, _ResponseMetadata} ->
+    case otel_otlp_logs:to_proto(Tab, Resource, Config) of
+        empty ->
             ok;
-        {error, {Status, Message}, _} ->
-            ?LOG_INFO("OTLP grpc export failed with GRPC status ~s : ~s", [Status, Message]),
-            error;
-        {http_error, {Status, _}, _} ->
-            ?LOG_INFO("OTLP grpc export failed with HTTP status code ~s", [Status]),
-            error;
-        {error, Reason} ->
-            ?LOG_INFO("OTLP grpc export failed with error: ~p", [Reason]),
-            error
+        ExportRequest ->
+            Ctx = grpcbox_metadata:append_to_outgoing_ctx(ctx:new(), Metadata),
+            case opentelemetry_logs_service:export(Ctx, ExportRequest, #{channel => Channel}) of
+                {ok, _Response, _ResponseMetadata} ->
+                    ok;
+                {error, {Status, Message}, _} ->
+                    ?LOG_INFO("OTLP grpc export failed with GRPC status ~s : ~s", [Status, Message]),
+                    error;
+                {http_error, {Status, _}, _} ->
+                    ?LOG_INFO("OTLP grpc export failed with HTTP status code ~s", [Status]),
+                    error;
+                {error, Reason} ->
+                    ?LOG_INFO("OTLP grpc export failed with error: ~p", [Reason]),
+                    error
+            end
     end;
 export(_, _Tab, _Resource, _State) ->
     {error, unimplemented}.
