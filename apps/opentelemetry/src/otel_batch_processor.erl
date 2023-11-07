@@ -311,13 +311,13 @@ terminate(_Reason, _State, #data{exporter=Exporter,
 
     %% `export' is used to perform a blocking export
     _ = export(Exporter, Resource, CurrentTable),
-
+    otel_exporter:shutdown(Exporter),
     ok.
 
 %%
 
 init_exporter(RegName, ExporterConfig) ->
-    case otel_exporter:init(ExporterConfig) of
+    case otel_exporter:init(traces, RegName, ExporterConfig) of
         Exporter when Exporter =/= undefined andalso Exporter =/= none ->
             enable(RegName),
             Exporter;
@@ -434,7 +434,7 @@ export({ExporterModule, Config}, Resource, SpansTid) ->
     %% don't let a exporter exception crash us
     %% and return true if exporter failed
     try
-        otel_exporter:export_traces(ExporterModule, SpansTid, Resource, Config) =:= failed_not_retryable
+        otel_exporter:export_traces(ExporterModule, SpansTid, Resource, Config)
     catch
         Kind:Reason:StackTrace ->
             ?LOG_INFO(#{source => exporter,

@@ -35,13 +35,13 @@ init([ProviderSup, Opts]) ->
                  intensity => 5,
                  period => 10},
     ChildSpecs = [begin
-                      ReaderId = make_ref(),
                       #{id => ReaderId,
                         start => {Module, start_link, [ReaderId, ProviderSup, ReaderConfig]},
                         type => worker,
                         restart => permanent,
                         shutdown => 1000}
-                  end || #{module := Module,
+                  end || #{id := ReaderId,
+                           module := Module,
                            config := ReaderConfig} <- Readers
                  ],
 

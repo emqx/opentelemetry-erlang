@@ -6,9 +6,7 @@
    [kernel,
     stdlib,
     inets,
-    ctx,
-    grpcbox,
-    tls_certificate_check,
+    grpc,
     opentelemetry_api
    ]},
   {env,[]},

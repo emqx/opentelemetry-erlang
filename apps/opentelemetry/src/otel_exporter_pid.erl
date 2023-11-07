@@ -19,11 +19,11 @@
 
 -behaviour(otel_exporter).
 
--export([init/1,
+-export([init/3,
          export/4,
          shutdown/1]).
 
-init(Pid) ->
+init(_OtelSignal, _ExporterId, Pid) ->
     {ok, Pid}.
 
 export(traces, SpansTid, _Resource, Pid) ->

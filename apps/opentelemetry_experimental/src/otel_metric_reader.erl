@@ -73,7 +73,7 @@ shutdown(ReaderPid) ->
 init([ReaderId, ProviderSup, Config]) ->
     erlang:process_flag(trap_exit, true),
     ExporterModuleConfig = maps:get(exporter, Config, undefined),
-    Exporter = otel_exporter:init(ExporterModuleConfig),
+    Exporter = otel_exporter:init(metrics, ReaderId, ExporterModuleConfig),
 
     DefaultAggregationMapping = maps:get(default_aggregation_mapping, Config, otel_aggregation:default_mapping()),
     Temporality = maps:get(default_temporality_mapping, Config, #{}),

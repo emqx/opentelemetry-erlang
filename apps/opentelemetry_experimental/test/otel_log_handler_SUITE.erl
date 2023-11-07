@@ -188,37 +188,38 @@ crud_test(_Config) ->
     {ok, #{reg_name := RegName}} = logger:get_handler_config(otel_handler_test),
     true = erlang:is_process_alive(erlang:whereis(RegName)),
 
+    %% Not allowed changes
     InvalidHandlerConf = #{reg_name => new_reg_name},
     InvalidHandlerConf1 = #{config => #{exporter => {new_module, #{}}}},
     InvalidHandlerConf2 = #{atomic_ref => new_atomic_ref},
     InvalidHandlerConf3 = #{tables => {new_tab1, new_tab2}},
-
+    InvalidHandlerConf4 = #{config => #{exporting_timeout_ms => 5555}},
     {error, {reg_name, _}} = logger:set_handler_config(otel_handler_test, InvalidHandlerConf),
     {error, {exporter, _}} = logger:set_handler_config(otel_handler_test, InvalidHandlerConf1),
     {error, {reg_name, _}} = logger:update_handler_config(otel_handler_test, InvalidHandlerConf),
     {error, {exporter, _}} = logger:update_handler_config(otel_handler_test, InvalidHandlerConf1),
     {error, {exporter, _}} = logger:update_handler_config(otel_handler_test, config,
                                                           #{exporter => {new_module, #{}}}),
-
     {error, {atomic_ref, _}} = logger:set_handler_config(otel_handler_test, InvalidHandlerConf2),
     {error, {tables, _}} = logger:set_handler_config(otel_handler_test, InvalidHandlerConf3),
+    {error, {exporting_timeout_ms, _}} = logger:set_handler_config(otel_handler_test,
+                                                                   InvalidHandlerConf4),
     {error, {atomic_ref, _}} = logger:update_handler_config(otel_handler_test, InvalidHandlerConf2),
     {error, {tables, _}} = logger:update_handler_config(otel_handler_test, InvalidHandlerConf3),
+    {error, {exporting_timeout_ms, _}} = logger:update_handler_config(otel_handler_test,
+                                                                      InvalidHandlerConf4),
 
     NewValidConf = #{max_queue_size => infinity,
-                     exporting_timeout_ms => 5000,
                      scheduled_delay_ms => 3000},
     ok = logger:update_handler_config(otel_handler_test, #{config => NewValidConf}),
     ok = logger:update_handler_config(otel_handler_test, config, NewValidConf),
     ok = logger:set_handler_config(otel_handler_test, #{config => NewValidConf}),
 
-    NewInvalidConf = #{max_queue_size => -100,
-                       exporting_timeout_ms => atom,
-                       scheduled_delay_ms => "string"},
+    %% Allowed but invalid values
+    NewInvalidConf = #{max_queue_size => -100, scheduled_delay_ms => "string"},
     {error, [_|_]} = logger:update_handler_config(otel_handler_test, #{config => NewInvalidConf}),
     {error, [_|_]} = logger:update_handler_config(otel_handler_test, config, NewInvalidConf),
     {error, [_|_]} = logger:set_handler_config(otel_handler_test, #{config => NewInvalidConf}),
-
     NewInvalidConf1 = #{unknown_opt => 100},
     {error, [_|_]} = logger:update_handler_config(otel_handler_test, #{config => NewInvalidConf1}),
     {error, [_|_]} = logger:update_handler_config(otel_handler_test, config, NewInvalidConf1),
@@ -530,9 +531,10 @@ exporter_exit_test(Config) ->
     end.
 
 %% exporter behaviour
-init(#{undefined_exporter := true}) ->
+init(_OtelSignal, _ExporterId, #{undefined_exporter := true}) ->
     ignore;
-init(#{retries := N, counter := Ref, reply_to := Pid} = ExpConfig) ->
+init(_OtelSignal, _ExporterId,
+     #{retries := N, counter := Ref, reply_to := Pid} = ExpConfig) ->
     case atomics:add_get(Ref, 1, 1) of
         N ->
             Pid ! exporter_ready,
@@ -541,13 +543,13 @@ init(#{retries := N, counter := Ref, reply_to := Pid} = ExpConfig) ->
             Pid ! exporter_not_ready,
             ignore
     end;
-init(#{spawn_link := true, sleep := Time} = ExpConfig) ->
+init(_OtelSignal, _ExporterId, #{spawn_link := true, sleep := Time} = ExpConfig) ->
     F = fun () -> timer:sleep(Time),
                   exit(test_exporter_crash)
         end,
     Pid = erlang:spawn_link(F),
     {ok, ExpConfig#{exporter_pid => Pid}};
-init(ExpConfig) ->
+init(_OtelSignal, _ExporterId, ExpConfig) ->
     {ok, ExpConfig}.
 
 export(logs, {Tab, _LogHandlerConfig}, _Resource, #{sleep := Time} = State) ->
