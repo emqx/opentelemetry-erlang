@@ -86,7 +86,7 @@ check_table_size_test(_Config) ->
 
 %% exporter behaviour
 
-init(_) ->
+init(_OtelSignal, _ExporterId, _) ->
     {ok, []}.
 
 export(_, _, _, _) ->

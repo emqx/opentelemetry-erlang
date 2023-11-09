@@ -18,7 +18,7 @@
 
 -module(otel_metric_exporter_pid).
 
--export([init/1,
+-export([init/3,
          export/4,
          force_flush/0,
          shutdown/1]).
@@ -27,9 +27,9 @@
 -include("otel_view.hrl").
 -include("otel_metrics.hrl").
 
-init({Tag, Pid}) ->
+init(_OtelSignal, _ExporterId, {Tag, Pid}) ->
     {ok, {Tag, Pid}};
-init(Pid) ->
+init(_OtelSignal, _ExporterId, Pid) ->
     {ok, {otel_metric, Pid}}.
 
 export(metrics, Metrics, _Resource, {Tag, Pid}) ->

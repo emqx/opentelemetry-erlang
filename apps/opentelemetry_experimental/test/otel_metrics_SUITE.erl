@@ -96,7 +96,8 @@ end_per_suite(_Config) ->
 init_per_testcase(provider_test, Config) ->
     application:load(opentelemetry_experimental),
     ok = application:set_env(opentelemetry_experimental, readers,
-                             [#{module => otel_metric_reader,
+                             [#{id => otel_test_reader,
+                                module => otel_metric_reader,
                                 config => #{exporter => {otel_metric_exporter_pid, self()},
                                             default_temporality_mapping => default_temporality_mapping()}}]),
     ok = application:set_env(opentelemetry_experimental, views,
@@ -117,10 +118,12 @@ init_per_testcase(provider_test, Config) ->
 init_per_testcase(multiple_readers, Config) ->
     application:load(opentelemetry_experimental),
     ok = application:set_env(opentelemetry_experimental, readers,
-                             [#{module => otel_metric_reader,
+                             [#{id => otel_test_reader,
+                                module => otel_metric_reader,
                                 config => #{exporter => {otel_metric_exporter_pid, self()},
                                             default_temporality_mapping => default_temporality_mapping()}},
-                              #{module => otel_metric_reader,
+                              #{id => otel_test_reader1,
+                                module => otel_metric_reader,
                                 config => #{exporter => {otel_metric_exporter_pid, self()},
                                             default_temporality_mapping => default_temporality_mapping(),
                                             default_aggregation_mapping =>
@@ -134,7 +137,8 @@ init_per_testcase(delta_counter, Config) ->
 
     %% delta is the default for a counter with sum aggregation
     %% so no need to set any temporality mapping in the reader
-    ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
+    ok = application:set_env(opentelemetry_experimental, readers, [#{id => otel_test_reader,
+                                                                     module => otel_metric_reader,
                                                                      config => #{exporter => {otel_metric_exporter_pid, self()},
                                                                                  default_temporality_mapping => default_temporality_mapping()}}]),
 
@@ -144,7 +148,8 @@ init_per_testcase(delta_counter, Config) ->
 init_per_testcase(cumulative_counter, Config) ->
     CumulativeCounterTemporality = maps:put(?KIND_COUNTER, ?TEMPORALITY_CUMULATIVE, default_temporality_mapping()),
     application:load(opentelemetry_experimental),
-    ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
+    ok = application:set_env(opentelemetry_experimental, readers, [#{id => otel_test_reader,
+                                                                     module => otel_metric_reader,
                                                                      config => #{exporter => {otel_metric_exporter_pid, self()},
                                                                                  default_temporality_mapping =>
                                                                                      CumulativeCounterTemporality}}]),
@@ -155,7 +160,8 @@ init_per_testcase(cumulative_counter, Config) ->
 init_per_testcase(delta_explicit_histograms, Config) ->
     DeltaHistogramTemporality = maps:put(?KIND_HISTOGRAM, ?TEMPORALITY_DELTA, default_temporality_mapping()),
     application:load(opentelemetry_experimental),
-    ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
+    ok = application:set_env(opentelemetry_experimental, readers, [#{id => otel_test_reader,
+                                                                     module => otel_metric_reader,
                                                                      config => #{exporter => {otel_metric_exporter_pid, self()},
                                                                                  default_temporality_mapping =>
                                                                                      DeltaHistogramTemporality}}]),
@@ -166,7 +172,8 @@ init_per_testcase(delta_explicit_histograms, Config) ->
 init_per_testcase(delta_observable_counter, Config) ->
     DeltaObservableCounterTemporality = maps:put(?KIND_OBSERVABLE_COUNTER, ?TEMPORALITY_DELTA, default_temporality_mapping()),
     application:load(opentelemetry_experimental),
-    ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
+    ok = application:set_env(opentelemetry_experimental, readers, [#{id => otel_test_reader,
+                                                                     module => otel_metric_reader,
                                                                      config => #{exporter => {otel_metric_exporter_pid, self()},
                                                                                  default_temporality_mapping =>
                                                                                      DeltaObservableCounterTemporality}}]),
@@ -176,7 +183,8 @@ init_per_testcase(delta_observable_counter, Config) ->
     Config;
 init_per_testcase(_, Config) ->
     application:load(opentelemetry_experimental),
-    ok = application:set_env(opentelemetry_experimental, readers, [#{module => otel_metric_reader,
+    ok = application:set_env(opentelemetry_experimental, readers, [#{id => otel_test_reader,
+                                                                     module => otel_metric_reader,
                                                                      config => #{exporter => {otel_metric_exporter_pid, self()},
                                                                                  default_temporality_mapping => default_temporality_mapping()}}]),
 

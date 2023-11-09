@@ -20,12 +20,12 @@
 
 -module(otel_metric_exporter).
 
--export([init/1,
+-export([init/3,
          export/2,
          force_flush/0,
          shutdown/0]).
 
-init(_) ->
+init(_OtelSignal, _ExporterId, _) ->
     {ok, []}.
 
 export(_Batch, _Config) ->

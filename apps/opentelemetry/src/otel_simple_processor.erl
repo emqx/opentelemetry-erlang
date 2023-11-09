@@ -59,7 +59,8 @@
                resource             :: otel_resource:t(),
                handed_off_table     :: atom() | undefined,
                runner_pid           :: pid() | undefined,
-               exporting_timeout_ms :: integer()}).
+               exporting_timeout_ms :: integer(),
+               reg_name             :: atom()}).
 
 -define(DEFAULT_EXPORTER_TIMEOUT_MS, timer:minutes(5)).
 -define(NAME_TO_ATOM(Name, Unique), list_to_atom(lists:concat([Name, "_", Unique]))).
@@ -114,7 +115,7 @@ on_end(_Span, _) ->
 force_flush(#{reg_name := RegName}) ->
     gen_statem:cast(RegName, force_flush).
 
-init([Args]) ->
+init([#{reg_name := RegName}=Args]) ->
     process_flag(trap_exit, true),
 
     ExportingTimeout = maps:get(exporting_timeout_ms, Args, ?DEFAULT_EXPORTER_TIMEOUT_MS),
@@ -132,7 +133,8 @@ init([Args]) ->
                      exporter_config=maps:get(exporter, Args, none),
                      resource = Resource,
                      handed_off_table=undefined,
-                     exporting_timeout_ms=ExportingTimeout},
+                     exporting_timeout_ms=ExportingTimeout,
+                    reg_name=RegName},
      [{next_event, internal, init_exporter}]}.
 
 callback_mode() ->
@@ -172,16 +174,19 @@ exporting(EventType, Event, Data) ->
     handle_event_(exporting, EventType, Event, Data).
 
 handle_event_(_, internal, init_exporter, Data=#data{exporter=undefined,
-                                                     exporter_config=ExporterConfig}) ->
-    Exporter = otel_exporter:init(ExporterConfig),
+                                                     exporter_config=ExporterConfig,
+                                                     reg_name=RegName}) ->
+    Exporter = otel_exporter:init(traces, RegName, ExporterConfig),
     {keep_state, Data#data{exporter=Exporter}};
-handle_event_(_, {call, From}, {set_exporter, Exporter}, Data=#data{exporter=OldExporter}) ->
+handle_event_(_, {call, From}, {set_exporter, Exporter}, Data=#data{exporter=OldExporter,
+                                                                    reg_name=RegName}) ->
     otel_exporter:shutdown(OldExporter),
-    {keep_state, Data#data{exporter=otel_exporter:init(Exporter)}, [{reply, From, ok}]};
+    {keep_state, Data#data{exporter=otel_exporter:init(traces, RegName, Exporter)}, [{reply, From, ok}]};
 handle_event_(_, _, _, _) ->
     keep_state_and_data.
 
-terminate(_, _, _Data) ->
+terminate(_, _, #data{exporter=Exporter}) ->
+    otel_exporter:shutdown(Exporter),
     ok.
 
 %%
@@ -243,7 +248,7 @@ export({ExporterModule, Config}, Resource, SpansTid) ->
     %% don't let a exporter exception crash us
     %% and return true if exporter failed
     try
-        otel_exporter:export_traces(ExporterModule, SpansTid, Resource, Config) =:= failed_not_retryable
+        otel_exporter:export_traces(ExporterModule, SpansTid, Resource, Config)
     catch
         Kind:Reason:StackTrace ->
             ?LOG_INFO(#{source => exporter,

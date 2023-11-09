@@ -27,8 +27,7 @@
 -export([log/2,
          adding_handler/1,
          removing_handler/1,
-         changing_config/3,
-         report_cb/1]).
+         changing_config/3]).
 
 %% gen_statem
 -export([init/1,
@@ -111,12 +110,14 @@
 -define(CURRENT_TAB_IX, 3).
 
 -define(private_field_err(_FieldName_), {error, {_FieldName_, "private_field_change_not_allowed"}}).
+-define(change_not_allowed_err(_FieldName_), {error, {_FieldName_, "field_change_not_allowed"}}).
 
 -define(DEFAULT_MAX_QUEUE_SIZE, 2048).
 -define(DEFAULT_SCHEDULED_DELAY_MS, timer:seconds(1)).
 -define(DEFAULT_EXPORTER_TIMEOUT_MS, timer:seconds(30)).
+-define(DEFAULT_EXPORTER_MODULE, opentelemetry_exporter).
 -define(DEFAULT_EXPORTER,
-        {opentelemetry_exporter, #{protocol => grpc, endpoints => ["http://localhost:4317"]}}).
+        {?DEFAULT_EXPORTER_MODULE, #{protocol => grpc, endpoints => ["http://localhost:4317"]}}).
 
 -define(SUP_SHUTDOWN_MS, 5500).
 %% Slightly lower than SUP_SHUTDOWN_MS
@@ -155,6 +156,7 @@ start_link(#{reg_name := RegName} = Config) ->
       Config2 :: config_private(),
       Reason :: term().
 adding_handler(#{id := Id}=Config) ->
+    ok = start_apps(),
     RegName = ?name_to_reg_name(?MODULE, Id),
     AtomicRef = atomics:new(3, [{signed, true}]),
     Config1 = Config#{reg_name => RegName,
@@ -182,9 +184,15 @@ changing_config(_, #{atomic_ref := Ref}, #{atomic_ref := Ref1}) when Ref =/= Ref
     ?private_field_err(atomic_ref);
 changing_config(_, #{tables := Tabs}, #{tables := Tabs1}) when Tabs =/= Tabs1 ->
     ?private_field_err(tables);
+%% Changing timeout or exporter config requires restart/re-initialiazation of exporter,
+%% which is not supported now.  If timeout or exporter needs to be changed,
+%% the handler should be stopped and started with the new config
 changing_config(_, #{config := #{exporter := Exporter}},
                 #{config := #{exporter := Exporter1}}) when Exporter =/= Exporter1 ->
-    ?private_field_err(exporter);
+    ?change_not_allowed_err(exporter);
+changing_config(_, #{config := #{exporting_timeout_ms := T}},
+                #{config := #{exporting_timeout_ms := T1}}) when T =/= T1 ->
+    ?change_not_allowed_err(exporting_timeout_ms);
 changing_config(SetOrUpdate, #{reg_name := RegName, config := OldOtelConfig}, NewConfig) ->
     NewOtelConfig = maps:get(config, NewConfig, #{}),
     case validate_config(NewOtelConfig) of
@@ -225,27 +233,35 @@ force_flush(#{reg_name := RegName}) ->
 %%--------------------------------------------------------------------
 
 init(Config) ->
-    #{config := OtelConfig,
+    #{config := #{exporting_timeout_ms := ExportTimeoutMs} = OtelConfig,
       atomic_ref := AtomicRef,
       reg_name := RegName,
       tables := {Tab1, Tab2}} = Config,
     process_flag(trap_exit, true),
     Resource = otel_resource_detector:get_resource(),
     ExporterConfig = maps:get(exporter, OtelConfig, ?DEFAULT_EXPORTER),
+    ExporterConfig1 = exporter_conf_with_timeout(ExporterConfig, ExportTimeoutMs),
+
     %% assert table names match
     Tab1 = ?table_1(RegName),
     Tab2 = ?table_2(RegName),
     _Tid1 = new_export_table(Tab1),
     _Tid2 = new_export_table(Tab2),
 
+    %% This is sligthly increased, to give the exporter runner a chance to  garcefully time-out
+    %% before being killed by the handler.
+    ExportTimeoutMs1 = ExportTimeoutMs + 1000,
+
     Data = #data{atomic_ref=AtomicRef,
                  exporter=undefined,
-                 exporter_config=ExporterConfig,
+                 exporter_config=ExporterConfig1,
+                 exporting_timeout_ms=ExportTimeoutMs1,
                  resource=Resource,
                  tables={Tab1, Tab2},
                  reg_name=RegName,
                  config = Config},
-    Data1 = add_config_to_data(Config, Data),
+    %% Also used in change_config API, thus mutable
+    Data1 = add_mutable_config_to_data(Config, Data),
 
     ?set_current_tab(AtomicRef, ?TAB_1_IX),
     ?set_available(AtomicRef, ?TAB_1_IX, Data1#data.max_queue_size),
@@ -264,8 +280,9 @@ init_exporter(enter, _OldState, _Data) ->
 init_exporter(_, do_init_exporter, Data=#data{exporter_config=ExporterConfig,
                                               atomic_ref=AtomicRef,
                                               tables=Tabs,
-                                              scheduled_delay_ms=SendInterval}) ->
-    case do_init_exporter(AtomicRef, Tabs, ExporterConfig) of
+                                              scheduled_delay_ms=SendInterval,
+                                              reg_name=RegName}) ->
+    case do_init_exporter(RegName, AtomicRef, Tabs, ExporterConfig) of
         undefined ->
             {keep_state_and_data, [{state_timeout, SendInterval, do_init_exporter}]};
         Exporter ->
@@ -358,6 +375,11 @@ terminate(_Reason, State, Data=#data{exporter=Exporter,
 %% Internal functions
 %%--------------------------------------------------------------------
 
+start_apps() ->
+    _ = application:ensure_all_started(opentelemetry_exporter),
+    _ = application:ensure_all_started(opentelemetry_experimental),
+    ok.
+
 start(Id, Config) ->
     ChildSpec =
         #{id       => Id,
@@ -379,7 +401,7 @@ start(Id, Config) ->
     end.
 
 handle_event_(_State, {call, From}, {changing_config, NewConfig}, Data) ->
-    {keep_state, add_config_to_data(NewConfig, Data), [{reply, From, {ok, NewConfig}}]};
+    {keep_state, add_mutable_config_to_data(NewConfig, Data), [{reply, From, {ok, NewConfig}}]};
 handle_event_(_State, info, {'EXIT', Pid, Reason}, #data{runner_pid=RunnerPid})
   when Pid =/= RunnerPid ->
     %% This can be a linked exporter process, unless someone linked to the handler process,
@@ -391,8 +413,8 @@ handle_event_(_State, info, {'EXIT', Pid, Reason}, #data{runner_pid=RunnerPid})
 handle_event_(_State, _, _, _) ->
     keep_state_and_data.
 
-do_init_exporter(AtomicRef, Tabs, ExporterConfig) ->
-    case otel_exporter:init(ExporterConfig) of
+do_init_exporter(RegName, AtomicRef, Tabs, ExporterConfig) ->
+    case otel_exporter:init(logs, RegName, ExporterConfig) of
         Exporter when Exporter =/= undefined andalso Exporter =/= none ->
             %% Need to enable log writes, if it has been disabled previously
             ?set_current_tab(AtomicRef, ?TAB_1_IX),
@@ -441,35 +463,19 @@ export_async(Exporter, Resource, CurrentTab, Config) ->
 
 export(undefined, _, _, _) ->
     true;
-export({ExporterModule, ExporterConfig}, Resource, Tab, Config) ->
-    %% TODO: better error handling, `
-    %% failed_not_retryable` is actually never returned from
+export({ExporterModule, ExporterState}, Resource, Tab, Config) ->
     try
-        otel_exporter:export_logs(ExporterModule, {Tab, Config}, Resource, ExporterConfig)
-            =:= failed_not_retryable
+        %% we ignore values, as no retries mechanism, is implemented
+        otel_exporter:export_logs(ExporterModule, {Tab, Config}, Resource, ExporterState)
     catch
-        Kind:Reason:StackTrace ->
+        Class:Reason:St ->
             %% Other logger handler(s) (e.g. default) should be enabled, so that
             %% log events produced by otel_log_handler are not lost in case otel_log_handler
             %% is not functioning properly.
-            ?LOG_WARNING(#{source => exporter,
-                           during => export,
-                           kind => Kind,
-                           reason => Reason,
-                           exporter => ExporterModule,
-                           stacktrace => StackTrace}, #{report_cb => fun ?MODULE:report_cb/1}),
-            true
+            ?LOG_ERROR("logs exporter ~p failed with exception: ~p:~p, stacktrace: ~p",
+                       [Class, Reason, otel_utils:stack_without_args(St)]),
+            error
     end.
-
-%% logger format functions
-report_cb(#{source := exporter,
-            during := export,
-            kind := Kind,
-            reason := Reason,
-            exporter := ExporterModule,
-            stacktrace := StackTrace}) ->
-    {"log exporter threw exception: exporter=~p ~ts",
-     [ExporterModule, otel_utils:format_exception(Kind, Reason, StackTrace)]}.
 
 new_export_table(Name) ->
     %% log event timestamps used as keys are not guaranteed to always be unique,
@@ -540,6 +546,10 @@ kill_runner(Data=#data{runner_pid=RunnerPid, handed_off_table=Tab}) when RunnerP
             Data#data{runner_pid=undefined, handed_off_table=undefined}
     end.
 
+exporter_conf_with_timeout({?DEFAULT_EXPORTER_MODULE, Conf}, TimeoutMs) ->
+    {?DEFAULT_EXPORTER_MODULE, Conf#{timeout_ms => TimeoutMs}};
+exporter_conf_with_timeout(OtherExporter, _Timeout) ->
+    OtherExporter.
 
 %% terminate/3 helpers
 
@@ -594,9 +604,8 @@ validate_opt(exporter, Module, _Config) when is_atom(Module) ->
 validate_opt(K, Val, _Config) ->
     {invalid_config, K, Val}.
 
-add_config_to_data(#{config := OtelConfig} = Config, Data) ->
+add_mutable_config_to_data(#{config := OtelConfig} = Config, Data) ->
     #{max_queue_size:=SizeLimit,
-      exporting_timeout_ms:=ExportingTimeout,
       scheduled_delay_ms:=ScheduledDelay
      } = OtelConfig,
     SizeLimit1 = case SizeLimit of
@@ -606,5 +615,4 @@ add_config_to_data(#{config := OtelConfig} = Config, Data) ->
                  end,
     Data#data{config=Config,
               max_queue_size=SizeLimit1,
-              exporting_timeout_ms=ExportingTimeout,
               scheduled_delay_ms=ScheduledDelay}.
