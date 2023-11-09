@@ -156,6 +156,7 @@ start_link(#{reg_name := RegName} = Config) ->
       Config2 :: config_private(),
       Reason :: term().
 adding_handler(#{id := Id}=Config) ->
+    ok = start_apps(),
     RegName = ?name_to_reg_name(?MODULE, Id),
     AtomicRef = atomics:new(3, [{signed, true}]),
     Config1 = Config#{reg_name => RegName,
@@ -373,6 +374,11 @@ terminate(_Reason, State, Data=#data{exporter=Exporter,
 %%--------------------------------------------------------------------
 %% Internal functions
 %%--------------------------------------------------------------------
+
+start_apps() ->
+    _ = application:ensure_all_started(opentelemetry_exporter),
+    _ = application:ensure_all_started(opentelemetry_experimental),
+    ok.
 
 start(Id, Config) ->
     ChildSpec =
