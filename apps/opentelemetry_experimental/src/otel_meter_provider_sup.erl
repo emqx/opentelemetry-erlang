@@ -20,7 +20,8 @@
 -behaviour(supervisor).
 
 -export([start_link/0,
-         start/3]).
+         start/3,
+         stop/1]).
 
 -export([init/1]).
 
@@ -30,17 +31,25 @@ start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 start(Name, Resource, Opts) ->
-    supervisor:start_child(?SERVER, [Name, Resource, Opts]).
+    supervisor:start_child(?SERVER, child_spec(Name, Resource, Opts)).
+
+stop(Name) ->
+    case supervisor:terminate_child(?SERVER, Name) of
+        ok ->
+            supervisor:delete_child(?SERVER, Name);
+        Err ->
+            Err
+    end.
 
 init([]) ->
-    SupFlags = #{strategy => simple_one_for_one,
+    SupFlags = #{strategy => one_for_one,
                  intensity => 1,
                  period => 5},
+    {ok, {SupFlags, []}}.
 
-    MeterServerSup = #{id => otel_meter_server_sup,
-                       start => {otel_meter_server_sup, start_link, []},
-                       restart => permanent,
-                       type => supervisor,
-                       modules => [otel_meter_server_sup]},
-
-    {ok, {SupFlags, [MeterServerSup]}}.
+child_spec(Name, Resource, Opts) ->
+    #{id => Name,
+      start => {otel_meter_server_sup, start_link, [Name, Resource, Opts]},
+      restart => permanent,
+      type => supervisor,
+      modules => [otel_meter_server_sup]}.

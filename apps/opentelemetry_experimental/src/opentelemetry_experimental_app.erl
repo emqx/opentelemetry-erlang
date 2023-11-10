@@ -8,7 +8,9 @@
 -behaviour(application).
 
 -export([start/2,
-         stop/1]).
+         stop/1,
+         start_default_metrics/0,
+         stop_default_metrics/0]).
 
 -include_lib("opentelemetry_api_experimental/include/otel_meter.hrl").
 
@@ -18,12 +20,26 @@ start(_StartType, _StartArgs) ->
 
     {ok, Pid} = opentelemetry_experimental_sup:start_link(Config),
 
-    Resource = otel_resource_detector:get_resource(),
-    {ok, _} = otel_meter_provider_sup:start(?GLOBAL_METER_PROVIDER_NAME, Resource, Config),
 
-    {ok, Pid}.
+    {ok, _} = start_default_metrics(Config),
+
+   {ok, Pid}.
 
 stop(_State) ->
     ok.
 
+-spec start_default_metrics() -> supervisor:startchild_ret().
+start_default_metrics() ->
+    Config = otel_configuration:merge_with_os(
+               application:get_all_env(opentelemetry_experimental)),
+    start_default_metrics(Config).
+
+-spec stop_default_metrics() -> ok | {error, Reason :: atom()}.
+stop_default_metrics() ->
+    otel_meter_provider_sup:stop(?GLOBAL_METER_PROVIDER_NAME).
+
 %% internal functions
+
+start_default_metrics(Config) ->
+    Resource = otel_resource_detector:get_resource(),
+    otel_meter_provider_sup:start(?GLOBAL_METER_PROVIDER_NAME, Resource, Config).

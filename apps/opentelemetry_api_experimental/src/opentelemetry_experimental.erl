@@ -23,7 +23,9 @@
          set_default_meter/1,
          set_default_meter/2,
          get_meter/0,
-         get_meter/1]).
+         get_meter/1,
+         start_default_metrics/0,
+         stop_default_metrics/0]).
 
 -include_lib("kernel/include/logger.hrl").
 -include("otel_meter.hrl").
@@ -118,3 +120,12 @@ set_meter(Name, Vsn, SchemaUrl, Meter) ->
       Meter:: meter().
 set_meter(MeterProvider, Name, Vsn, SchemaUrl, Meter) ->
     opentelemetry:verify_and_set_term(Meter, ?METER_KEY(MeterProvider, {Name, Vsn, SchemaUrl}), otel_meter).
+
+
+-spec start_default_metrics() -> supervisor:startchild_ret().
+start_default_metrics() ->
+    opentelemetry_experimental_app:start_default_metrics().
+
+-spec stop_default_metrics() -> ok | {error, Reason :: atom()}.
+stop_default_metrics() ->
+    opentelemetry_experimental_app:stop_default_metrics().
