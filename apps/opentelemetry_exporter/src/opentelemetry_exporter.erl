@@ -375,14 +375,18 @@ init_by_proto(grpc, State) ->
                        false ->
                            ChannelOpts
                    end,
+    State1 = State#state{grpc_metadata = headers_to_grpc_metadata(Headers)},
     case grpc_client_sup:create_channel_pool(ExporterId,
                                              Endpoint,
                                              ChannelOpts1) of
         {ok, ChannelPid} ->
-            Metadata = headers_to_grpc_metadata(Headers),
-            {ok, State#state{channel_pid=ChannelPid,
-                             channel=ExporterId,
-                             grpc_metadata=Metadata}};
+            {ok, State1#state{channel_pid=ChannelPid, channel=ExporterId}};
+        {error, {already_started, _}} ->
+            %% Reusing an existing client is not safe, as the config/endpoint can be changed,
+            %% thus, it is restarted.
+            %% Using unique exporter IDs is absolutely required, otherwise, one exporter instance
+            %% can stop grpc client of another exporter.
+            restart_grpc_client(ExporterId, Endpoint, ChannelOpts1, State1);
         Error -> Error
     end;
 init_by_proto(HTTP, State) when HTTP =:= http_protobuf; HTTP =:= http_json ->
@@ -407,6 +411,19 @@ start_httpc(State) ->
             ok
     end,
     ExporterId.
+
+restart_grpc_client(ExporterId, Endpoint, ChannelOpts, State) ->
+    case grpc_client_sup:stop_channel_pool(ExporterId) of
+        ok ->
+            case grpc_client_sup:create_channel_pool(ExporterId, Endpoint, ChannelOpts) of
+                {ok, ChannelPid} ->
+                    {ok, State#state{channel_pid=ChannelPid, channel=ExporterId}};
+                Error ->
+                    Error
+            end;
+        Error ->
+            Error
+    end.
 
 headers_to_grpc_metadata(Headers) ->
     lists:foldl(fun({X, Y}, Acc) ->
