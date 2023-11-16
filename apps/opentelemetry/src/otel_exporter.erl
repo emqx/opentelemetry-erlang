@@ -21,11 +21,14 @@
          export_traces/4,
          export_metrics/4,
          export_logs/4,
+         export/5,
          shutdown/1]).
 
--export_type([otel_signal/0]).
+-export_type([otel_signal/0,
+              exporter_config/0]).
 
 -type otel_signal() :: traces | metrics | logs.
+-type exporter_config() :: module() | {module(), Config :: term()} | undefined | none | ignore.
 
 %% Do any initialization of the exporter here and return configuration
 %% that will be passed along with a list of spans to the `export' function.
@@ -49,6 +52,7 @@
 
 -include_lib("kernel/include/logger.hrl").
 
+-spec init(otel_signal(), atom(), exporter_config()) -> {module(), term()} | error | ignore.
 init(OtelSignal, ExporterId, {ExporterModule, Config}) when is_atom(ExporterModule),
                                                             is_atom(ExporterId) ->
     try ExporterModule:init(OtelSignal, ExporterId, Config) of
@@ -58,19 +62,21 @@ init(OtelSignal, ExporterId, {ExporterModule, Config}) when is_atom(ExporterModu
         {error, Reason} ->
             ?LOG_ERROR("~p ~p exporter failed to initalize, error: ~p",
                        [OtelSignal, ExporterModule, Reason]),
-            undefined;
+            error;
         ignore ->
-            undefined
+            ignore
     catch
         Class:Reason:St ->
             %% logging in debug level since config argument in stacktrace could have secrets
             ?LOG_ERROR("~p ~p exporter failed to initialize with exception: ~p:~p, stacktrace: ~p",
                        [OtelSignal, ExporterModule, Class, Reason,
                         otel_utils:stack_without_args(St)]),
-            undefined
+            error
     end;
-init(_OtelSignal, _ExporterId, Exporter) when Exporter =:= none ; Exporter =:= undefined ->
-    undefined;
+init(_OtelSignal, _ExporterId, Exporter) when Exporter =:= none;
+                                              Exporter =:= undefined;
+                                              Exporter =:= ignore ->
+    ignore;
 init(OtelSignal, ExporterId, ExporterModule) when is_atom(ExporterModule) ->
     init(OtelSignal, ExporterId, {ExporterModule, []}).
 
@@ -83,15 +89,6 @@ export_metrics(ExporterModule, MetricsTid, Resource, ExporterState) ->
 export_logs(ExporterModule, LogsTidAndHandlerConfig, Resource, ExporterState) ->
     export(logs, ExporterModule, LogsTidAndHandlerConfig, Resource, ExporterState).
 
-shutdown(undefined) ->
-    ok;
-shutdown({ExporterModule, Config}) ->
-    ExporterModule:shutdown(Config).
-
-%%--------------------------------------------------------------------
-%% Internal functions
-%%--------------------------------------------------------------------
-
 export(OtelSignal, ExporterModule, Tid, Resource, ExporterState) ->
     case ExporterModule:export(OtelSignal, Tid, Resource, ExporterState) of
         ok -> ok;
@@ -100,3 +97,7 @@ export(OtelSignal, ExporterModule, Tid, Resource, ExporterState) ->
             {error, Reason}
     end.
 
+shutdown(undefined) ->
+    ok;
+shutdown({ExporterModule, Config}) ->
+    ExporterModule:shutdown(Config).

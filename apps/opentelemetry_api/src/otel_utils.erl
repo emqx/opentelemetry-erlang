@@ -22,7 +22,8 @@
          format_binary_string/3,
          assert_to_binary/1,
          unicode_to_binary/1,
-         stack_without_args/1]).
+         stack_without_args/1,
+         cleanup_persistent_terms/1]).
 
 -if(?OTP_RELEASE >= 24).
 format_exception(Kind, Reason, StackTrace) ->
@@ -65,3 +66,14 @@ stack_without_args([StItem | T] ) ->
     [StItem | stack_without_args(T)];
 stack_without_args([]) ->
     [].
+
+-spec cleanup_persistent_terms(module()) -> ok.
+cleanup_persistent_terms(Module) ->
+    lists:foreach(
+      fun({Key, _})  ->
+              case is_tuple(Key) andalso element(1, Key) =:= Module of
+                  true -> persistent_term:erase(Key);
+                  false -> ok
+              end
+      end,
+      persistent_term:get()).
