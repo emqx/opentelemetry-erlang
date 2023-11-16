@@ -25,7 +25,8 @@
          get_meter/0,
          get_meter/1,
          start_default_metrics/0,
-         stop_default_metrics/0]).
+         stop_default_metrics/0,
+         cleanup_persistent_terms/0]).
 
 -include_lib("kernel/include/logger.hrl").
 -include("otel_meter.hrl").
@@ -129,3 +130,6 @@ start_default_metrics() ->
 -spec stop_default_metrics() -> ok | {error, Reason :: atom()}.
 stop_default_metrics() ->
     opentelemetry_experimental_app:stop_default_metrics().
+
+cleanup_persistent_terms() ->
+    otel_utils:cleanup_persistent_terms(?MODULE).
