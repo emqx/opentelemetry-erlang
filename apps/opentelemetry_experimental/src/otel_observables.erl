@@ -27,7 +27,7 @@
 -type callbacks() :: [{otel_instrument:callback(), otel_instrument:callback_args(), otel_instrument:t()}].
 
 %% call each callback and associate the result with the Instruments it observes
--spec run_callbacks(callbacks(), reference(), ets:table(), ets:table()) -> ok.
+-spec run_callbacks(callbacks(), atom(), ets:table(), ets:table()) -> ok.
 run_callbacks(Callbacks, ReaderId, ViewAggregationTab, MetricsTab) ->
     lists:foreach(fun({Callback, CallbackArgs, Instruments})
                         when is_list(Instruments) ->
@@ -49,7 +49,7 @@ run_callbacks(Callbacks, ReaderId, ViewAggregationTab, MetricsTab) ->
 
 %% lookup ViewAggregations for Instrument and aggregate each observation
 -spec handle_instrument_observations([otel_instrument:observation()], otel_instrument:t(),
-                                     ets:table(), ets:table(), reference()) -> ok.
+                                     ets:table(), ets:table(), atom()) -> ok.
 handle_instrument_observations(Results, #instrument{meter=Meter,
                                                     name=Name},
                                ViewAggregationTab, MetricsTab, ReaderId) ->
@@ -67,7 +67,7 @@ handle_instrument_observations(Results, #instrument{meter=Meter,
 
 %% handle results for a multi-instrument callback
 -spec handle_instruments_observations([otel_instrument:named_observations()], [otel_instrument:t()],
-                                      ets:table(), ets:table(), reference()) -> ok.
+                                      ets:table(), ets:table(), atom()) -> ok.
 handle_instruments_observations([], _Instruments, _ViewAggregationTab, _MetricsTab, _ReaderId) ->
     ok;
 handle_instruments_observations([{InstrumentName, Results} | Rest], Instruments,
