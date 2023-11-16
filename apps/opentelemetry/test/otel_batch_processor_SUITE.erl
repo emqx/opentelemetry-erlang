@@ -10,6 +10,7 @@
 
 all() ->
     [exporting_timeout_test,
+     exporting_runner_timeout_test,
      check_table_size_test].
 
 %% verifies that after the runner has to be killed for taking too long
@@ -18,10 +19,10 @@ exporting_timeout_test(_Config) ->
     process_flag(trap_exit, true),
 
     {ok, Pid, _} = otel_batch_processor:start_link(#{name => test_processor,
-                                                     resource => otel_resource:create([]),
-                                                     exporter => ?MODULE,
-                                                     exporting_timeout_ms => 1,
-                                                     scheduled_delay_ms => 1}),
+                                                      resource => otel_resource:create([]),
+                                                      exporter => ?MODULE,
+                                                      exporting_timeout_ms => 1,
+                                                      scheduled_delay_ms => 1}),
 
     receive
         {'EXIT', Pid, _} ->
@@ -35,8 +36,8 @@ exporting_timeout_test(_Config) ->
 exporting_runner_timeout_test(_Config) ->
     process_flag(trap_exit, true),
 
-    {ok, Pid, #{reg_name := RegName}} = otel_batch_processor:start_link(
-                                          #{name => test_processor1,
+    {ok, Pid, State} = otel_batch_processor:start_link(
+                                          #{name => test_processor,
                                             resource => otel_resource:create([]),
                                             exporter => ?MODULE,
                                             exporting_timeout_ms => 1,
@@ -44,8 +45,8 @@ exporting_runner_timeout_test(_Config) ->
 
     %% Insert a few spans to make sure runner process will be spawned and killed
     %% because it hangs for 10 minutes (see export/4 below)
-    true = otel_batch_processor:on_end(generate_span(), #{reg_name => RegName}),
-    true = otel_batch_processor:on_end(generate_span(), #{reg_name => RegName}),
+    true = otel_batch_processor:on_end(generate_span(), State),
+    true = otel_batch_processor:on_end(generate_span(), State),
 
     receive
         {'EXIT', Pid, _} ->
@@ -58,31 +59,29 @@ exporting_runner_timeout_test(_Config) ->
 
 check_table_size_test(_Config) ->
     MaxQueueSize = 10,
-    CheckTableSizeMs = 1,
-    {ok, _Pid, #{reg_name := RegName}} = otel_batch_processor:start_link(
-                                           #{name => test_processor_check_size_test,
-                                             resource => otel_resource:create([]),
-                                             exporter => ?MODULE,
-                                             exporting_timeout_ms => timer:minutes(10),
-                                             %% long enough, so that it never happens during the test
-                                             scheduled_delay_ms => timer:minutes(10),
-                                             check_table_size_ms => CheckTableSizeMs,
-                                             max_queue_size => MaxQueueSize}
-                                          ),
+    {ok, _Pid, State} = otel_batch_processor:start_link(
+                          #{name => test_processor_check_size_test,
+                            resource => otel_resource:create([]),
+                            exporter => ?MODULE,
+                            exporting_timeout_ms => timer:minutes(10),
+                            %% long enough, so that it never happens during the test
+                            scheduled_delay_ms => timer:minutes(10),
+                            max_queue_size => MaxQueueSize}
+                         ),
     %% max_queue_size limit is not reached
-    true = otel_batch_processor:on_end(generate_span(), #{reg_name => RegName}),
-    lists:foreach(fun(_) ->
-                          otel_batch_processor:on_end(generate_span(), #{reg_name => RegName})
-                  end,
-                  lists:seq(1, MaxQueueSize)),
-    %% Wait for more than CheckTableSizeMs to be sure check timeout occurred
-    timer:sleep(CheckTableSizeMs * 5),
-    dropped = otel_batch_processor:on_end(generate_span(), #{reg_name => RegName}),
+    true = otel_batch_processor:on_end(generate_span(), State),
 
-    otel_batch_processor:force_flush(#{reg_name => RegName}),
-    %% force_flush is async, have to wait for some long enough time again,
-    timer:sleep(CheckTableSizeMs * 10),
-    true = otel_batch_processor:on_end(generate_span(), #{reg_name => RegName}).
+    insert_spans(State, MaxQueueSize),
+  
+    %% Wait a little to give the handler time to transition to the export state
+    timer:sleep(30),
+
+    %% Insert the same number again, rgis time to the next table, as the previous is being exported,
+    %% exporter is slow (see init_per_testcase), so we can be sure that we will go to the drop mode,
+    %% with no chance to switch the table this time.
+    insert_spans(State, MaxQueueSize),
+
+    dropped = otel_batch_processor:on_end(generate_span(), State).
 
 %% exporter behaviour
 
@@ -96,6 +95,10 @@ shutdown(_) ->
     ok.
 
 %% helpers
+
+insert_spans(State, N) ->
+    lists:foreach(fun(_) -> otel_batch_processor:on_end(generate_span(), State) end,
+                  lists:seq(1, N)).
 
 generate_span() ->
     #span{trace_id = otel_id_generator:generate_trace_id(),

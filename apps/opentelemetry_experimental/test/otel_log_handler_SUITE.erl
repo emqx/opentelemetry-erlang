@@ -25,7 +25,8 @@ all() ->
      no_exporter_test,
      retry_exporter_init_test,
      default_opentelemetry_exporter_test,
-     exporter_exit_test].
+     exporter_exit_test,
+     disabled_exporter_test].
 
 init_per_suite(Config) ->
     Config.
@@ -168,6 +169,11 @@ init_per_testcase(exporter_exit_test = TC, Config) ->
                                 scheduled_delay_ms => 10}},
     ok = logger:add_handler(TC, ?OTEL_LOG_HANDLER, HandlerConf),
     [{handler_id, TC}, {exporter_sleep, ExporterSleep} | Config1];
+init_per_testcase(disabled_exporter_test = TC, Config) ->
+    Config1 = common_testcase_init(Config),
+    HandlerConf = #{config => #{exporter => ignore, scheduled_delay_ms => 1}},
+    ok = logger:add_handler(TC, ?OTEL_LOG_HANDLER, HandlerConf),
+    [{handler_id, TC} | Config1];
 init_per_testcase(_TC, Config) ->
     common_testcase_init(Config).
 
@@ -185,15 +191,15 @@ crud_test(_Config) ->
     ok = logger:add_handler(otel_handler_test, ?OTEL_LOG_HANDLER, HandlerConf),
     ok = logger:add_handler(otel_handler_test1, ?OTEL_LOG_HANDLER, HandlerConf),
     ok = logger:remove_handler(otel_handler_test1),
-    {ok, #{reg_name := RegName}} = logger:get_handler_config(otel_handler_test),
+    {ok, #{config := #{reg_name := RegName}}} = logger:get_handler_config(otel_handler_test),
     true = erlang:is_process_alive(erlang:whereis(RegName)),
 
     %% Not allowed changes
-    InvalidHandlerConf = #{reg_name => new_reg_name},
+    InvalidHandlerConf = #{config => #{reg_name => new_reg_name}},
     InvalidHandlerConf1 = #{config => #{exporter => {new_module, #{}}}},
-    InvalidHandlerConf2 = #{atomic_ref => new_atomic_ref},
-    InvalidHandlerConf3 = #{tables => {new_tab1, new_tab2}},
-    InvalidHandlerConf4 = #{config => #{exporting_timeout_ms => 5555}},
+    InvalidHandlerConf2 = #{config => #{atomic_ref => new_atomic_ref}},
+    InvalidHandlerConf3 = #{config => #{tables => {new_tab1, new_tab2}}},
+    InvalidHandlerConf4 = #{config => #{exporter => ExporterConf ,exporting_timeout_ms => 5555}},
     {error, {reg_name, _}} = logger:set_handler_config(otel_handler_test, InvalidHandlerConf),
     {error, {exporter, _}} = logger:set_handler_config(otel_handler_test, InvalidHandlerConf1),
     {error, {reg_name, _}} = logger:update_handler_config(otel_handler_test, InvalidHandlerConf),
@@ -232,8 +238,8 @@ crud_test(_Config) ->
 
 exporting_runner_timeout_test(Config) ->
     HandlerId = ?config(handler_id, Config),
-    {ok, #{config := #{scheduled_delay_ms := Delay},
-           reg_name := RegName} = HandlerConf} = logger:get_handler_config(HandlerId),
+    {ok, #{config := #{scheduled_delay_ms := Delay,
+                       reg_name := RegName}} = HandlerConf} = logger:get_handler_config(HandlerId),
 
     Mon = erlang:monitor(process, RegName),
 
@@ -255,8 +261,8 @@ exporting_runner_timeout_test(Config) ->
 
 check_max_queue_test(Config) ->
     HandlerId = ?config(handler_id, Config),
-    {ok, #{config := #{max_queue_size := MaxQueueSize}}
-     = HandlerConf} = logger:get_handler_config(HandlerId),
+    {ok, #{config := #{max_queue_size := MaxQueueSize}} = HandlerConf} =
+        logger:get_handler_config(HandlerId),
 
     true = ?OTEL_LOG_HANDLER:log(log_event(), HandlerConf),
     true = ?OTEL_LOG_HANDLER:log(log_event(), HandlerConf),
@@ -275,8 +281,8 @@ check_max_queue_test(Config) ->
 
 export_max_queue_size_success_test(Config) ->
     HandlerId = ?config(handler_id, Config),
-    {ok, #{config := #{max_queue_size := MaxSize}}
-     = HandlerConf} = logger:get_handler_config(HandlerId),
+    {ok, #{config := #{max_queue_size := MaxSize}} = HandlerConf} =
+        logger:get_handler_config(HandlerId),
 
     erlang:spawn(fun() -> insert_events(HandlerConf, MaxSize) end),
     %% Export must be triggered by reaching max_export_batch_size because
@@ -304,7 +310,7 @@ scheduled_export_success_test(Config) ->
 
 flush_on_terminate_test(Config) ->
     HandlerId = ?config(handler_id, Config),
-    {ok, #{reg_name := RegName} = HandlerConf} = logger:get_handler_config(HandlerId),
+    {ok, #{config := #{reg_name := RegName}} = HandlerConf} = logger:get_handler_config(HandlerId),
 
     LogsNum = 15,
     insert_events(HandlerConf, LogsNum),
@@ -321,7 +327,7 @@ flush_on_terminate_test(Config) ->
 
 sanity_end_to_end_test(Config) ->
     HandlerId = ?config(handler_id, Config),
-    {ok, #{reg_name := RegName}} = logger:get_handler_config(HandlerId),
+    {ok, #{config := #{reg_name := RegName}}} = logger:get_handler_config(HandlerId),
     Mon = erlang:monitor(process, RegName),
 
     otel_propagator_text_map:extract(otel_propagator_trace_context, [{"traceparent",?TRACEPARENT}]),
@@ -368,9 +374,10 @@ sanity_end_to_end_test(Config) ->
 
 overload_protection_slow_exporter_test(Config) ->
     HandlerId = ?config(handler_id, Config),
-    {ok, #{tables := {Tab1, Tab2},
-           config := #{max_queue_size := MaxSize},
-           reg_name := RegName} = HandlerConf} = logger:get_handler_config(HandlerId),
+    {ok, #{config :=
+               #{tables := {Tab1, Tab2},
+                 max_queue_size := MaxSize,
+                 reg_name := RegName}} = HandlerConf} = logger:get_handler_config(HandlerId),
 
     Pid1 = spawn(fun() -> insert_loop(HandlerConf) end),
     Pid2 = spawn(fun() -> insert_loop(HandlerConf) end),
@@ -388,9 +395,10 @@ overload_protection_slow_exporter_test(Config) ->
 
 overload_protection_fast_exporter_test(Config) ->
     HandlerId = ?config(handler_id, Config),
-    {ok, #{tables := {Tab1, Tab2},
-           config := #{max_queue_size := MaxSize},
-           reg_name := RegName} = HandlerConf} = logger:get_handler_config(HandlerId),
+    {ok, #{config :=
+               #{tables := {Tab1, Tab2},
+                 max_queue_size := MaxSize,
+                 reg_name := RegName}} = HandlerConf} = logger:get_handler_config(HandlerId),
 
     Pid1 = spawn(fun() -> insert_loop(HandlerConf) end),
     Pid2 = spawn(fun() -> insert_loop(HandlerConf) end),
@@ -435,8 +443,8 @@ late_writes_test(Config) ->
 %% similar to late_writes_test but checks that the other table is checked and exported on termination
 late_writes_on_terminate_test(Config) ->
     HandlerId = ?config(handler_id, Config),
-    {ok, #{config := #{max_queue_size := MaxSize}}
-     = HandlerConf} = logger:get_handler_config(HandlerId),
+    {ok, #{config := #{max_queue_size := MaxSize}} = HandlerConf} =
+        logger:get_handler_config(HandlerId),
     LateWritesSize = length(?config(late_writes, Config)),
     insert_events(HandlerConf, MaxSize),
 
@@ -457,8 +465,8 @@ late_writes_on_terminate_test(Config) ->
 
 no_exporter_test(Config) ->
     HandlerId = ?config(handler_id, Config),
-    {ok, #{config := #{scheduled_delay_ms := Delay},
-           reg_name := RegName} = HandlerConf} = logger:get_handler_config(HandlerId),
+    {ok, #{config := #{reg_name := RegName, scheduled_delay_ms := Delay}} = HandlerConf} =
+        logger:get_handler_config(HandlerId),
     Mon = erlang:monitor(process, RegName),
 
     %% Enough time to be sure export is triggered and state transition happened
@@ -478,9 +486,8 @@ retry_exporter_init_test(Config) ->
     {ok, HandlerConf} = logger:get_handler_config(HandlerId),
     receive
         exporter_not_ready ->
-            %% wait a little to give the handler time to disable
-            timer:sleep(50),
-            ?assertEqual(dropped, ?OTEL_LOG_HANDLER:log(log_event(), HandlerConf)),
+            %% expect accepting events: exporter is not ready yet, but max_queue_size is not reached
+            ?assertEqual(true, ?OTEL_LOG_HANDLER:log(log_event(), HandlerConf)),
             receive
                 exporter_ready ->
                     %% give some time to the handler to enable
@@ -500,8 +507,8 @@ retry_exporter_init_test(Config) ->
 %%  This test only checks that no crashes occur
 default_opentelemetry_exporter_test(Config) ->
     HandlerId = ?config(handler_id, Config),
-    {ok, #{config := #{scheduled_delay_ms := Delay},
-           reg_name := RegName} = HandlerConf} = logger:get_handler_config(HandlerId),
+    {ok, #{config := #{scheduled_delay_ms := Delay, reg_name := RegName}} = HandlerConf} =
+        logger:get_handler_config(HandlerId),
     Mon = erlang:monitor(process, RegName),
 
     insert_events(HandlerConf, 10),
@@ -518,7 +525,7 @@ default_opentelemetry_exporter_test(Config) ->
 exporter_exit_test(Config) ->
     HandlerId = ?config(handler_id, Config),
     ExporterSleep = ?config(exporter_sleep, Config),
-    {ok, #{reg_name := RegName}} = logger:get_handler_config(HandlerId),
+    {ok, #{config := #{reg_name := RegName}}} = logger:get_handler_config(HandlerId),
     Mon = erlang:monitor(process, RegName),
 
     Timeout = ExporterSleep * 2,
@@ -529,6 +536,17 @@ exporter_exit_test(Config) ->
     after Timeout ->
             ct:fail(otel_log_handler_no_exit)
     end.
+
+disabled_exporter_test(Config) ->
+    HandlerId = ?config(handler_id, Config),
+    {ok, #{config := #{scheduled_delay_ms := Delay}} = HandlerConf} =
+        logger:get_handler_config(HandlerId),
+
+    %% Enough time to be sure exporter init is triggered and handler is in permanent drop mode
+    Timeout = Delay * 10,
+    timer:sleep(Timeout),
+    %% Must be disabled
+    ?assertEqual(dropped, ?OTEL_LOG_HANDLER:log(log_event(), HandlerConf)).
 
 %% exporter behaviour
 init(_OtelSignal, _ExporterId, #{undefined_exporter := true}) ->
@@ -541,7 +559,7 @@ init(_OtelSignal, _ExporterId,
             {ok, ExpConfig};
         _ ->
             Pid ! exporter_not_ready,
-            ignore
+            {error, not_ready}
     end;
 init(_OtelSignal, _ExporterId, #{spawn_link := true, sleep := Time} = ExpConfig) ->
     F = fun () -> timer:sleep(Time),
