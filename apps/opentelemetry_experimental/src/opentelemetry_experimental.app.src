@@ -1,6 +1,6 @@
 {application, opentelemetry_experimental,
  [{description, "Implementation of unstable OpenTelemetry signals"},
-  {vsn, "0.5.1-emqx"},
+  {vsn, "0.5.2-emqx"},
   {registered, []},
   {mod, {opentelemetry_experimental_app, []}},
   {applications,

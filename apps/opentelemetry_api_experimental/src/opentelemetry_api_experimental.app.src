@@ -1,6 +1,6 @@
 {application, opentelemetry_api_experimental,
  [{description, "API for unstable OpenTelemetry signals"},
-  {vsn, "0.4.1-emqx"},
+  {vsn, "0.4.2-emqx"},
   {registered, []},
   {applications,
    [kernel,
