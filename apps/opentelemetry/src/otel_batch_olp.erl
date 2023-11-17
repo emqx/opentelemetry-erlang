@@ -412,11 +412,6 @@ handle_event_(_State, _, _, _) ->
     keep_state_and_data.
 
 do_init_exporter(Signal, RegName, ExporterConfig) ->
-    %% It's crucial to attempt starting opentelemetry_exporter in post init stage,
-    %% when otel_batch_olp has been already started (its `init/1` returned).
-    %% The reason is that it can called by logger:adding_handler/1 cb causing a deadlock
-    %% with ssl app (opentelemetry_exporter dependency), if ssl app has not been started previously.
-    _ = application:ensure_all_started(opentelemetry_exporter),
     otel_exporter:init(Signal, RegName, ExporterConfig).
 
 start_exporting_timer(SendInterval) ->

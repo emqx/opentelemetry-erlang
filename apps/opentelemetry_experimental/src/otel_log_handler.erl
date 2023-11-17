@@ -74,12 +74,6 @@
 
 -spec adding_handler(config()) -> {ok, config_state()} | {error, term()}.
 adding_handler(#{id := Id}=Config) ->
-    %% Don't start opentelemetry_exporter here as it depends on ssl app, which also installs
-    %% its own log handler. If ssl app is not started yet, it will cause a deadlock.
-    %% For now, starting opentelemetry_experimental in `adding_handler/1` cb is safe,
-    %% but if some dependencies like ssl are added to it, it will cause issues.
-    _ = application:ensure_all_started(opentelemetry_experimental),
-
     HandlerConfig = maps:merge(default_config(), maps:get(config, Config, #{})),
     RegName = ?REG_NAME(Id),
     OtelBatchOlpConfig = HandlerConfig#{reg_name => RegName,
