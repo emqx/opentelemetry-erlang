@@ -262,7 +262,13 @@ export(_, _Tab, _Resource, _State) ->
 shutdown(#state{channel_pid=undefined}) ->
     ok;
 shutdown(#state{channel=Channel}) ->
-    _ = grpc_client_sup:stop_channel_pool(Channel),
+    %% if gproc is already stopped (e.g. during shutdown),
+    %% `grpc_client_sup:stop_channel_pool/1` can crash with badarg
+    try
+        _ = grpc_client_sup:stop_channel_pool(Channel)
+    catch
+        _:_ -> ok
+    end,
     ok.
 
 %%--------------------------------------------------------------------

@@ -166,7 +166,7 @@ handle_info(_, State) ->
     {noreply, State}.
 
 terminate(_Reason, #state{exporter = Exporter}) ->
-    ok = otel_exporter:shutdown(Exporter),
+    _ = otel_exporter:shutdown(Exporter),
     ok.
 
 code_change(State) ->
