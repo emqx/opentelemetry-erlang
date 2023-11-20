@@ -1,6 +1,6 @@
 {application, opentelemetry_api,
  [{description, "OpenTelemetry API"},
-  {vsn, "1.2.3-emqx"},
+  {vsn, "1.2.4-emqx"},
   {registered, []},
   {applications,
    [kernel,
