@@ -129,7 +129,9 @@ start_default_metrics() ->
 
 -spec stop_default_metrics() -> ok | {error, Reason :: atom()}.
 stop_default_metrics() ->
-    opentelemetry_experimental_app:stop_default_metrics().
+    SupRes = opentelemetry_experimental_app:stop_default_metrics(),
+    _ = cleanup_persistent_terms(),
+    SupRes.
 
 cleanup_persistent_terms() ->
     otel_utils:cleanup_persistent_terms(?MODULE).

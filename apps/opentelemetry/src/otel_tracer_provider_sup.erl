@@ -21,11 +21,20 @@
 
 -export([start_link/0,
          start/2,
-         start/3]).
+         start/3,
+         stop/1]).
 
 -export([init/1]).
 
 -define(SERVER, ?MODULE).
+-define(sup_safe(_Action_),
+        try
+            _Action_
+        catch
+            exit:{noproc, _} ->
+                %% no tracer provider sup is started, the sdk is probably disabled
+                {error, no_tracer_provider_supervisor}
+        end).
 
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
@@ -35,23 +44,26 @@ start(Name, Config) ->
     start(Name, otel_resource:create([]), Config).
 
 start(Name, Resource, Config) ->
-    try
-        supervisor:start_child(?MODULE, [Name, Resource, Config])
-    catch
-        exit:{noproc, _} ->
-            %% no tracer provider sup is started, the sdk is probably disabled
-            {error, no_tracer_provider_supervisor}
-    end.
+    ?sup_safe(supervisor:start_child(?MODULE, child_spec(Name, Resource, Config))).
+
+stop(Name) ->
+    ?sup_safe(case supervisor:terminate_child(?MODULE, Name) of
+                  ok ->
+                      supervisor:delete_child(?MODULE, Name);
+                  Err ->
+                      Err
+              end).
 
 init([]) ->
-    SupFlags = #{strategy => simple_one_for_one,
+    SupFlags = #{strategy => one_for_one,
                  intensity => 1,
                  period => 5},
+    {ok, {SupFlags, []}}.
 
-    TracerServerSup = #{id => otel_tracer_server_sup,
-                        start => {otel_tracer_server_sup, start_link, []},
-                        restart => permanent,
-                        type => supervisor,
-                        modules => [otel_tracer_server_sup]},
 
-    {ok, {SupFlags, [TracerServerSup]}}.
+child_spec(Name, Resource, Config) ->
+    #{id => Name,
+      start => {otel_tracer_server_sup, start_link, [Name, Resource, Config]},
+      restart => permanent,
+      type => supervisor,
+      modules => [otel_tracer_server_sup]}.

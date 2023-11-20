@@ -29,6 +29,8 @@
 -module(opentelemetry).
 
 -export([start_tracer_provider/2,
+         start_default_tracer_provider/0,
+         stop_default_tracer_provider/0,
          set_default_tracer/1,
          set_default_tracer/2,
          create_application_tracers/1,
@@ -162,6 +164,40 @@
 -spec start_tracer_provider(atom(), map()) -> {ok, pid() | undefined} | {error, term()}.
 start_tracer_provider(Name, Config) ->
     otel_tracer_provider:start(Name, Config).
+
+-spec start_default_tracer_provider() -> supervisor:startchild_ret() | {error, disabled}.
+start_default_tracer_provider() ->
+    Config = otel_configuration:merge_with_os(
+               application:get_all_env(opentelemetry)),
+
+    %% Set the global propagators for HTTP based on the application env.
+    %% These get set even if the SDK is disabled.
+    setup_text_map_propagators(Config),
+
+    Resource = otel_resource_detector:get_resource(),
+    case Config of
+        #{sdk_disabled := true} ->
+            {error, disabled};
+        _ ->
+            %% Set global span limits record based on configuration
+            otel_span_limits:set(Config),
+
+            Resource = otel_resource_detector:get_resource(),
+            SupRes = otel_tracer_provider_sup:start(?GLOBAL_TRACER_PROVIDER_NAME, Resource, Config),
+
+            %% Must be done after the supervisor starts so that otel_tracer_server is running.
+            %% TODO: make this work with release upgrades. Currently if an application's version
+            %% changes the version in the tracer will not be updated.
+            create_loaded_application_tracers(Config),
+            SupRes
+    end.
+
+-spec stop_default_tracer_provider() -> ok | {error, Reason :: atom()}.
+stop_default_tracer_provider() ->
+    SupRes = otel_tracer_provider_sup:stop(?GLOBAL_TRACER_PROVIDER_NAME),
+    _ = opentelemetry:cleanup_persistent_terms(),
+    _ = otel_span_limits:cleanup_persistent_terms(),
+    SupRes.
 
 -spec set_default_tracer(tracer()) -> boolean().
 set_default_tracer(Tracer) ->
@@ -527,3 +563,15 @@ name_to_binary(T) when is_list(T) ->
     list_to_binary(T);
 name_to_binary(T) when is_binary(T) ->
     T.
+
+setup_text_map_propagators(#{text_map_propagators := List}) ->
+    CompositePropagator = otel_propagator_text_map_composite:create(List),
+    opentelemetry:set_text_map_propagator(CompositePropagator).
+
+create_loaded_application_tracers(#{create_application_tracers := true}) ->
+    %% TODO: filter out OTP apps that will not have any instrumentation
+    LoadedApplications = application:loaded_applications(),
+    opentelemetry:create_application_tracers(LoadedApplications),
+    ok;
+create_loaded_application_tracers(_) ->
+    ok.
