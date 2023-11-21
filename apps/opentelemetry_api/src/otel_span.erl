@@ -49,11 +49,11 @@
 -define(OTEL_SPAN_ID, otel_span_id).
 -define(OTEL_TRACE_FLAGS, otel_trace_flags).
 
--type start_opts() :: #{attributes := opentelemetry:attributes_map(),
-                        links := [opentelemetry:link()],
-                        is_recording := boolean(),
-                        start_time := opentelemetry:timestamp(),
-                        kind := opentelemetry:span_kind()}.
+-type start_opts() :: #{attributes => opentelemetry:attributes_map(),
+                        links => [opentelemetry:link()],
+                        is_recording => boolean(),
+                        start_time => opentelemetry:timestamp(),
+                        kind => opentelemetry:span_kind()}.
 
 -export_type([start_opts/0]).
 
