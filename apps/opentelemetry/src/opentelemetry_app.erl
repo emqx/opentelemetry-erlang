@@ -25,11 +25,14 @@
 -include_lib("opentelemetry_api/include/opentelemetry.hrl").
 
 start(_StartType, _StartArgs) ->
-    Config = otel_configuration:merge_with_os(
-               application:get_all_env(opentelemetry)),
+    #{start_default_tracer := StartDefaultTracer} = Config =
+        otel_configuration:merge_with_os(application:get_all_env(opentelemetry)),
 
     SupResult = opentelemetry_sup:start_link(Config),
-    _ = opentelemetry:start_default_tracer_provider(),
+    _ = case StartDefaultTracer of
+            true -> opentelemetry:start_default_tracer_provider();
+            false -> ok
+        end,
     SupResult.
 
 stop(_State) ->

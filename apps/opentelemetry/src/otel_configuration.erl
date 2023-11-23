@@ -62,7 +62,10 @@
                event_count_limit := integer(),
                link_count_limit := integer(),
                attribute_per_event_limit := integer(),
-               attribute_per_link_limit := integer()}.
+               attribute_per_link_limit := integer(),
+               start_default_tracer => boolean(),
+               start_default_metrics => boolean()
+}.
 
 -export_type([t/0]).
 
@@ -100,7 +103,9 @@ new() ->
                    event_count_limit => 128,
                    link_count_limit => 128,
                    attribute_per_event_limit => 128,
-                   attribute_per_link_limit => 128}, t()).
+                   attribute_per_link_limit => 128,
+                   start_default_tracer => true,
+                   start_default_metrics => true}, t()).
 
 -spec merge_with_os(list()) -> t().
 merge_with_os(AppEnv) ->
@@ -320,7 +325,9 @@ config_mappings(general_sdk) ->
      %% the following is not supported yet
      %% {"OTEL_BSP_MAX_EXPORT_BATCH_SIZE", bsp_max_export_batch_size, integer}
 
-     {"OTEL_SSP_EXPORT_TIMEOUT_MILLIS", ssp_exporting_timeout_ms, integer}
+     {"OTEL_SSP_EXPORT_TIMEOUT_MILLIS", ssp_exporting_timeout_ms, integer},
+     {"OTEL_START_DEFAULT_TRACER", start_default_tracer, boolean},
+     {"OTEL_START_DEFAULT_METRICS", start_default_metrics, boolean}
     ];
 config_mappings(span_limits) ->
     [{"OTEL_SPAN_ATTRIBUTE_COUNT_LIMIT", attribute_count_limit, integer},
