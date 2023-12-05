@@ -493,13 +493,6 @@ to_list(Data) ->
     end.
 
 app_env_opts() ->
-    %% exporters are initialized by calling their `init/1' function from `opentelemetry'.
-    %% since this application depends on `opentelemetry' it will not be started during
-    %% boot before its `init/1' is called. In a release this is fine since all apps
-    %% are loaded first, before any are started, but in case this is run not by a
-    %% release we load the application here to ensure the application environment is
-    %% available to read configuration from.
-    application:load(opentelemetry_exporter),
     ConfigMapping = config_mapping(),
     Config = lists:foldl(fun({_EnvVar, OptName, _Type}, Acc) -> Acc#{OptName => undefined} end,
                          #{},
