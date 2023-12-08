@@ -153,10 +153,11 @@ current_tab_to_list(RegName) ->
 %% otel_batch_olp API
 %%--------------------------------------------------------------------
 
--spec init_conf(otel_batch_olp_config()) -> {ok, otel_batch_olp_state()} | {error, term()}.
+-spec init_conf(otel_batch_olp_config() | otel_batch_olp_state()) ->
+          {ok, otel_batch_olp_state()} | {error, term()}.
 init_conf(#{reg_name := RegName, cb_module := _Module, otel_signal := _, exporter := _,
             max_queue_size := _, exporting_timeout_ms := _, scheduled_delay_ms := _} = Config) ->
-    case validate_config(Config) of
+    case validate_config(without_state_fields(Config)) of
         ok ->
             AtomicRef = atomics:new(3, [{signed, true}]),
             {ok, Config#{reg_name => RegName,
@@ -198,10 +199,10 @@ insert_signal(Record, #{atomic_ref := AtomicRef, tables := Tabs} = State) ->
 force_flush(#{reg_name := RegName}) ->
     gen_statem:cast(RegName, force_flush).
 
--spec change_config(OldConfigState, NewConfig, NewExtConfig) ->
+-spec change_config(OldConfigState, NewConfigOrState, NewExtConfig) ->
           {ok, NewConfigState} | {error, Reason} when
       OldConfigState :: otel_batch_olp_state(),
-      NewConfig :: otel_batch_olp_config(),
+      NewConfigOrState :: otel_batch_olp_config() | otel_batch_olp_state(),
       NewExtConfig :: term(),
       NewConfigState :: otel_batch_olp_state(),
       Reason :: term().
@@ -218,11 +219,12 @@ change_config(#{exporter := Exporter}, #{exporter := Exporter1}, _) when Exporte
     ?change_not_allowed_err(exporter);
 change_config(#{exporting_timeout_ms := T}, #{exporting_timeout_ms := T1}, _) when T =/= T1 ->
     ?change_not_allowed_err(exporting_timeout_ms);
-change_config(#{reg_name := RegName} = OldConfig, NewConfig, NewExtConfig) ->
+change_config(#{reg_name := RegName} = OldConfig, NewConfigOrState, NewExtConfig) ->
+    NewConfig = without_state_fields(NewConfigOrState),
     case validate_config(NewConfig) of
         ok ->
             %% This is necessary, so that the config returned to the caller
-            %% contains alls the immutable keys required to communicate with
+            %% contains all the immutable keys required to communicate with
             %% otel_batch_olp
             NewConfig1 = copy_required_fields(OldConfig, NewConfig),
             gen_statem:call(RegName, {change_config, NewConfig1, NewExtConfig});
@@ -598,3 +600,6 @@ copy_required_fields(OldConf, NewConf) ->
              otel_signal => Signal,
              tables => Tabs,
              atomic_ref => AtomicRef}.
+
+without_state_fields(ConfigOrState) ->
+    maps:without([tables, atomic_ref], ConfigOrState).

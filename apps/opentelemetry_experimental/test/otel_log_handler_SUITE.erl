@@ -220,6 +220,8 @@ crud_test(_Config) ->
     ok = logger:update_handler_config(otel_handler_test, #{config => NewValidConf}),
     ok = logger:update_handler_config(otel_handler_test, config, NewValidConf),
     ok = logger:set_handler_config(otel_handler_test, #{config => NewValidConf}),
+    ok = logger:set_handler_config(otel_handler_test, level, debug),
+    ok = logger:set_handler_config(otel_handler_test, level, critical),
 
     %% Allowed but invalid values
     NewInvalidConf = #{max_queue_size => -100, scheduled_delay_ms => "string"},
