@@ -65,17 +65,13 @@
 -define(DEFAULT_EXPORTER_TIMEOUT_MS, timer:minutes(5)).
 -define(NAME_TO_ATOM(Name, Unique), list_to_atom(lists:concat([Name, "_", Unique]))).
 
-start_link(Config) ->
-    Name = case maps:find(name, Config) of
-               {ok, N} ->
-                   N;
-               error ->
-                   %% use a unique reference to distiguish multiple batch processors while
-                   %% still having a single name, instead of a possibly changing pid, to
-                   %% communicate with the processor
-                   erlang:ref_to_list(erlang:make_ref())
-           end,
-
+%% require a unique name to distiguish multiple simple processors while
+%% still having a single name, instead of a possibly changing pid, to
+%% communicate with the processor
+%% @doc Starts a Simple Span Processor.
+%% @end
+-spec start_link(#{name := atom() | list()}) -> {ok, pid(), map()}.
+start_link(Config=#{name := Name}) ->
     RegisterName = ?NAME_TO_ATOM(?MODULE, Name),
     Config1 = Config#{reg_name => RegisterName},
     {ok, Pid} = gen_statem:start_link({local, RegisterName}, ?MODULE, [Config1], []),
@@ -88,20 +84,20 @@ set_exporter(Exporter) ->
 %% @deprecated Please use {@link otel_tracer_provider}
 -spec set_exporter(module(), term()) -> ok.
 set_exporter(Exporter, Options) ->
-    %% eqwalizer:ignore doesn't like gen_`statem:call' returns `term()'
     gen_statem:call(?REG_NAME(global), {set_exporter, {Exporter, Options}}).
 
 %% @deprecated Please use {@link otel_tracer_provider}
 -spec set_exporter(atom(), module(), term()) -> ok.
 set_exporter(Name, Exporter, Options) ->
-    %% eqwalizer:ignore doesn't like `gen_statem:call' returns `term()'
     gen_statem:call(?REG_NAME(Name), {set_exporter, {Exporter, Options}}).
 
+%% @private
 -spec on_start(otel_ctx:t(), opentelemetry:span(), otel_span_processor:processor_config())
               -> opentelemetry:span().
 on_start(_Ctx, Span, _) ->
     Span.
 
+%% @private
 -spec on_end(opentelemetry:span(), otel_span_processor:processor_config())
             -> true | dropped | {error, invalid_span} | {error, no_export_buffer}.
 on_end(#span{trace_flags=TraceFlags}, _) when not(?IS_SAMPLED(TraceFlags)) ->
@@ -111,6 +107,7 @@ on_end(Span=#span{}, #{reg_name := RegName}) ->
 on_end(_Span, _) ->
     {error, invalid_span}.
 
+%% @private
 -spec force_flush(#{reg_name := gen_statem:server_ref()}) -> ok.
 force_flush(#{reg_name := RegName}) ->
     gen_statem:cast(RegName, force_flush).
@@ -137,9 +134,11 @@ init([#{reg_name := RegName}=Args]) ->
                     reg_name=RegName},
      [{next_event, internal, init_exporter}]}.
 
+%% @private
 callback_mode() ->
     state_functions.
 
+%% @private
 idle({call, From}, {export, _Span}, #data{exporter=undefined}) ->
     {keep_state_and_data, [{reply, From, dropped}]};
 idle({call, From}, {export, Span}, Data) ->
@@ -147,6 +146,7 @@ idle({call, From}, {export, Span}, Data) ->
 idle(EventType, Event, Data) ->
     handle_event_(idle, EventType, Event, Data).
 
+%% @private
 exporting({call, _From}, {export, _}, _) ->
     {keep_state_and_data, [postpone]};
 exporting(internal, {export, From, Span}, Data=#data{exporting_timeout_ms=ExportingTimeout}) ->
@@ -203,7 +203,7 @@ kill_runner(Data=#data{runner_pid=RunnerPid}) when RunnerPid =/= undefined ->
     Mon = erlang:monitor(process, RunnerPid),
     erlang:unlink(RunnerPid),
     erlang:exit(RunnerPid, kill),
-    %% Wait for the runner process terminatation to be sure that
+    %% Wait for the runner process termination to be sure that
     %% the export table is destroyed and can be safely recreated
     receive
         {'DOWN', Mon, process, RunnerPid, _} ->
@@ -261,6 +261,7 @@ export({ExporterModule, Config}, Resource, SpansTid) ->
     end.
 
 %% logger format functions
+%% @private
 report_cb(#{source := exporter,
             during := export,
             kind := Kind,

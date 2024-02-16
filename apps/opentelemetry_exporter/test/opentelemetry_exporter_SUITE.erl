@@ -18,7 +18,7 @@ groups() ->
     [{functional, [], [configuration, span_round_trip, ets_instrumentation_info]},
      {grpc, [], [verify_export, verify_metrics_export]},
      {grpc_gzip, [], [verify_export]},
-     {http_protobuf, [], [verify_export]},
+     {http_protobuf, [], [verify_export, user_agent]},
      {http_protobuf_gzip, [], [verify_export]}].
 
 init_per_suite(Config) ->
@@ -168,18 +168,24 @@ verify_metrics_export(Config) ->
 configuration(_Config) ->
     try
         %% Default conf
-        ?assertEqual(#{endpoint => #{host => "localhost", path => "/v1/traces", port => 4318, scheme => "http"},
-                       headers => [], protocol => http_protobuf, ssl_options => [], compression => undefined,
-                       timeout_ms => 30000},
+        ?assertMatch(#{endpoint := #{host := "localhost", path := "/v1/traces", port := 4318, scheme := "http"},
+                       headers := [{"user-agent", _} | _],
+                       protocol := http_protobuf,
+                       ssl_options := [],
+                       compression := undefined,
+                       timeout_ms := 30000},
                      opentelemetry_exporter:init_conf(traces, #{})),
         %% Only grpc is implemented for logs and metrics, expecting it to be used by default,
         %% no default path must be set for grpc
-        MetricsAndLogsDefaultExpected =
-            #{endpoint => #{host => "localhost", path => [], port => 4317, scheme => "http"},
-              headers => [], protocol => grpc, ssl_options => [], compression => undefined,
-              timeout_ms => 30000},
-        ?assertEqual(MetricsAndLogsDefaultExpected, opentelemetry_exporter:init_conf(logs, #{})),
-        ?assertEqual(MetricsAndLogsDefaultExpected, opentelemetry_exporter:init_conf(metrics, #{})),
+        [?assertMatch(
+           #{endpoint := #{host := "localhost", path := [], port := 4317, scheme := "http"},
+             headers := [{"user-agent", _} | _],
+             protocol := grpc,
+             ssl_options := [],
+             compression := undefined,
+             timeout_ms := 30000},
+            opentelemetry_exporter:init_conf(OtelSignal, #{})
+           ) || OtelSignal <- [logs, metrics]],
 
         ?assertMatch(#{endpoint := #{scheme := "http", host := "localhost", port := 9090, path := []},
                        protocol := http_protobuf,
@@ -267,7 +273,7 @@ configuration(_Config) ->
         ?assertMatch(#{endpoint :=
                            #{host := "localhost", path := "/v1/traces", port := 4343,
                              scheme := "http"},
-                       headers := [{"key1", "value1"}],
+                       headers := [{"user-agent", _}, {"key1", "value1"}],
                        protocol := http_protobuf
                       },
                      opentelemetry_exporter:init_conf(traces, #{})),
@@ -277,7 +283,7 @@ configuration(_Config) ->
         ?assertMatch(#{endpoint :=
                            #{host := "localhost", path := "/internal/v1/traces", port := 4343,
                             scheme := "http"},
-                       headers := [{"key1", "value1"}],
+                       headers := [{"user-agent", _}, {"key1", "value1"}],
                        compression := undefined,
                        protocol := http_protobuf},
                      opentelemetry_exporter:init_conf(traces, #{})),
@@ -308,7 +314,7 @@ configuration(_Config) ->
         ?assertMatch(#{endpoint :=
                            #{host := "localhost", path := "/traces/path", port := 5353,
                              scheme := "http"},
-                       headers := [{"key2", "value2"}],
+                       headers := [{"user-agent", _}, {"key2", "value2"}],
                        compression := undefined,
                        protocol := http_protobuf},
                      opentelemetry_exporter:init_conf(traces, #{})),
@@ -529,3 +535,48 @@ verify_export(Config) ->
     ?assertMatch(ok, opentelemetry_exporter:export(traces, Tid, Resource, State)),
 
     ok.
+
+user_agent(Config) ->
+    Protocol = ?config(protocol, Config),
+    Compression = ?config(compression, Config),
+    Port = 4318,
+
+    {ok, State} = opentelemetry_exporter:init(
+                    traces,
+                    test_exporter,
+                    #{protocol => Protocol,
+                      compression => Compression,
+                      endpoints => [{http, "localhost", Port, []}]}),
+
+    Tid = ets:new(span_tab, [duplicate_bag, {keypos, #span.instrumentation_scope}]),
+
+    TraceId = otel_id_generator:generate_trace_id(),
+    SpanId = otel_id_generator:generate_span_id(),
+
+    ParentSpan =
+        #span{name = <<"span-1">>,
+              trace_id = TraceId,
+              span_id = SpanId,
+              kind = ?SPAN_KIND_CLIENT,
+              start_time = opentelemetry:timestamp(),
+              end_time = opentelemetry:timestamp(),
+              status = #status{code=?OTEL_STATUS_UNSET, message = <<"hello I'm unset">>},
+              links = otel_links:new([], 128, 128, 128),
+              events = otel_events:new(128, 128, 128),
+              instrumentation_scope = #instrumentation_scope{name = <<"tracer-1">>,
+                                                             version = <<"0.0.1">>},
+              attributes = otel_attributes:new([{<<"attr-2">>, <<"value-2">>}], 128, 128)},
+    true = ets:insert(Tid, ParentSpan),
+    Resource = otel_resource_env_var:get_resource([]),
+
+    meck:new(httpc),
+    meck:expect(httpc, request, fun(post, {_, Headers, "application/x-protobuf", _}, _, _, _) ->
+        {_, UserAgent} = lists:keyfind("user-agent", 1, Headers),
+        {ok, ExporterVsn} = application:get_key(opentelemetry_exporter, vsn),
+        ExpectedUserAgent = lists:flatten(io_lib:format("OTel-OTLP-Exporter-erlang/~s", [ExporterVsn])),
+        ?assertEqual(ExpectedUserAgent, UserAgent),
+        {ok, {{"1.1", 200, ""}, [], <<>>}}
+    end),
+    ?assertMatch(ok, opentelemetry_exporter:export(traces, Tid, Resource, State)),
+    ?assert(meck:validate(httpc)),
+    meck:unload(httpc).

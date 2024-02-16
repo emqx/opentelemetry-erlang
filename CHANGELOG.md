@@ -25,11 +25,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [Attributes module `otel_attributes` moved to
   API](https://github.com/open-telemetry/opentelemetry-erlang/pull/618)
 
+### Fixes
+
+- [Fix leak of atoms/persistent terms by creating unique processor name in `otel_tracer_server`](https://github.com/open-telemetry/opentelemetry-erlang/pull/646)
+
 ## Experimental API
 
 ### Changes
 
-- [Allow to create observable instruments without passing callback arguments](https://github.com/open-telemetry/opentelemetry-erlang/pull/604)
+- [Allow to create observable instruments without passing callback
+  arguments](https://github.com/open-telemetry/opentelemetry-erlang/pull/604)
+- [Allow to give `advisory_params` to instrument creation functions](https://github.com/open-telemetry/opentelemetry-erlang/pull/628)
+- [Attributes are optional in Counter.add(), UpDownCounter.add() and Histo.record()](https://github.com/open-telemetry/opentelemetry-erlang/pull/632)
 
 ## Experimental SDK
 
@@ -37,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - [Add `instrument_unit` to view criteria](https://github.com/open-telemetry/opentelemetry-erlang/pull/604)
 - [Validate instrument name](https://github.com/open-telemetry/opentelemetry-erlang/pull/604)
+- [Handle `explict_bucket_boundaries` advisory parameter](https://github.com/open-telemetry/opentelemetry-erlang/pull/628)
+- [Rename `boundaries` to `explict_bucket_boundaries` in histogram explicit aggregation options](https://github.com/open-telemetry/opentelemetry-erlang/pull/628)
+- [Allow creating wildcard views](https://github.com/open-telemetry/opentelemetry-erlang/pull/624)
 
 ### Changes
 
@@ -46,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
  - [Correctly record histogram values greater than last boundary](https://github.com/open-telemetry/opentelemetry-erlang/pull/614)
  - [Readers should use a default cumulative temporality if not specified](https://github.com/open-telemetry/opentelemetry-erlang/pull/613)
+ - [Check for positive data values in counters and histograms](https://github.com/open-telemetry/opentelemetry-erlang/pull/632)
 
 ## SDK 1.3.1 - 2023-08-15
 
