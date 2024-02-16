@@ -26,6 +26,7 @@
 -callback processor_init(pid(), processor_config()) -> processor_config().
 
 -callback on_start(otel_ctx:t(), opentelemetry:span(), processor_config()) -> opentelemetry:span().
+
 -callback on_end(opentelemetry:span(), processor_config()) -> true |
                                                               dropped |
                                                               {error, term()}.
@@ -34,6 +35,13 @@
 
 -optional_callbacks([processor_init/2]).
 
+%% @doc Starts a span processor.
+%%
+%% `Module' must implement the `otel_span_processor' behaviour. This function
+%% calls `Module:start_link/1' with `Config' as the argument.
+%% @end
+-spec start_link(module(), Config) -> {ok, pid(), Config} | {error, term()} when
+      Config :: processor_config().
 start_link(Module, Config) ->
     case Module:start_link(Config) of
         {ok, Pid} ->

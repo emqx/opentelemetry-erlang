@@ -12,14 +12,19 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 %%
-%% @doc The Batch Span Processor implements the `otel_span_processor'
-%% behaviour. It stores finished Spans in a ETS table buffer and exports
+%% @doc The Batch Span Processor implements the {@link otel_span_processor}
+%% behaviour.
+%%
+%% It stores finished Spans in a ETS table buffer and exports
 %% them on an interval or when the table reaches a maximum size.
 %%
-%% Timeouts:
-%%   exporting_timeout_ms: How long to let the exports run before killing.
-%%   check_table_size_ms: Timeout to check the size of the export table.
-%%   scheduled_delay_ms: How often to trigger running the exporters.
+%% You can configure these timeouts:
+%%
+%% <ul>
+%% <li>`exporting_timeout_ms': how long to let the exports run before killing.</li>
+%% <li>`check_table_size_ms': timeout to check the size of the export table.</li>
+%% <li>`scheduled_delay_ms': how often to trigger running the exporters.</li>
+%% </ul>
 %%
 %% The size limit of the current table where finished spans are stored can
 %% be configured with the `max_queue_size' option.
@@ -76,6 +81,7 @@ start_link(#{name := Name} = Config) ->
             Err
     end.
 
+%% @private
 -spec on_start(otel_ctx:t(), opentelemetry:span(), otel_span_processor:processor_config())
               -> opentelemetry:span().
 on_start(_Ctx, Span, _) ->

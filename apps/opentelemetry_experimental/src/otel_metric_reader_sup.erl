@@ -34,15 +34,14 @@ init([ProviderSup, Opts]) ->
     SupFlags = #{strategy => one_for_one,
                  intensity => 5,
                  period => 10},
-    ChildSpecs = [begin
-                      #{id => ReaderId,
-                        start => {Module, start_link, [ReaderId, ProviderSup, ReaderConfig]},
-                        type => worker,
-                        restart => permanent,
-                        shutdown => 1000}
-                  end || #{id := ReaderId,
-                           module := Module,
-                           config := ReaderConfig} <- Readers
-                 ],
-
+    ChildSpecs = lists:map(
+                   fun(#{id := ReaderId,module := Module, config := ReaderConfig}) ->
+                           #{id => ReaderId,
+                             start => {Module, start_link, [ReaderId, ProviderSup, ReaderConfig]},
+                             type => worker,
+                             restart => permanent,
+                             shutdown => 1000}
+                   end,
+                   Readers
+                  ),
     {ok, {SupFlags, ChildSpecs}}.

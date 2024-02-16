@@ -19,10 +19,10 @@ exporting_timeout_test(_Config) ->
     process_flag(trap_exit, true),
 
     {ok, Pid, _} = otel_batch_processor:start_link(#{name => test_processor,
-                                                      resource => otel_resource:create([]),
-                                                      exporter => ?MODULE,
-                                                      exporting_timeout_ms => 1,
-                                                      scheduled_delay_ms => 1}),
+                                                     resource => otel_resource:create([]),
+                                                     exporter => ?MODULE,
+                                                     exporting_timeout_ms => 1,
+                                                     scheduled_delay_ms => 1}),
 
     receive
         {'EXIT', Pid, _} ->
