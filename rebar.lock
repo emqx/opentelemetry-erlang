@@ -9,10 +9,10 @@
   2},
  {<<"eqwalizer_support">>,
   {git_subdir,"https://github.com/whatsapp/eqwalizer.git",
-              {ref,"1a787cb604f6083ebe8763e358ea362e4677e500"},
+              {ref,"da4f7a056facb693dcebc0076dd12ec9785e1458"},
               "eqwalizer_support"},
   0},
- {<<"gpb">>,{pkg,<<"gpb">>,<<"4.20.0">>},1},
+ {<<"gpb">>,{pkg,<<"gpb">>,<<"4.21.1">>},1},
  {<<"gproc">>,{pkg,<<"gproc">>,<<"0.9.1">>},1},
  {<<"grpc">>,
   {git,"https://github.com/emqx/grpc-erl",
@@ -28,9 +28,9 @@
   2}]}.
 [
 {pkg_hash,[
- {<<"gpb">>, <<"3617FB7762801C1BED0460ED496D5BAB0F4D76E26B923A9AD9ABF026C2220E8A">>},
+ {<<"gpb">>, <<"72E229C242D252D690ADDCFD04A6416C26C4D4D2C3521E05570A7A78B48D3BD1">>},
  {<<"gproc">>, <<"F1DF0364423539CF0B80E8201C8B1839E229E5F9B3CCB944C5834626998F5B8C">>}]},
 {pkg_hash_ext,[
- {<<"gpb">>, <<"4268756A98674D5159EEAA0FD4501B7E43B2DD7F10A1F052499E9B09F107D40B">>},
+ {<<"gpb">>, <<"C05C9AEA9E25BD341367A43B3D3EB68E951563911072259C5EC4CB6642F4EF22">>},
  {<<"gproc">>, <<"905088E32E72127ED9466F0BAC0D8E65704CA5E73EE5A62CB073C3117916D507">>}]}
 ].
