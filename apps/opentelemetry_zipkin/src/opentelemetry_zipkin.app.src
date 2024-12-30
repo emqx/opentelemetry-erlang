@@ -1,6 +1,6 @@
 {application, opentelemetry_zipkin,
  [{description, "OpenTelemetry Zipkin Exporter"},
-  {vsn, "1.1.1"},
+  {vsn, "1.1.2-emqx"},
   {registered, []},
   {applications,
    [kernel,
