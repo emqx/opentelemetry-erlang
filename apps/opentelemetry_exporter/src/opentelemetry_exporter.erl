@@ -377,9 +377,10 @@ init_by_proto(grpc, State) ->
     ChannelOpts1 = case is_ssl(Endpoint) of
                        true ->
                            ChannelOpts#{gun_opts => #{transport => ssl,
-                                                      transport_opts => SSLOptions}};
+                                                      tls_opts => SSLOptions,
+                                                      retry => 0}};
                        false ->
-                           ChannelOpts
+                           ChannelOpts#{gun_opts => #{retry => 0}}
                    end,
     State1 = State#state{grpc_metadata = headers_to_grpc_metadata(Headers)},
     case grpc_client_sup:create_channel_pool(ExporterId,
