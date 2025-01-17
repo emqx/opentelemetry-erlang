@@ -16,12 +16,9 @@
  {<<"gproc">>,{pkg,<<"gproc">>,<<"0.9.1">>},1},
  {<<"grpc">>,
   {git,"https://github.com/emqx/grpc-erl",
-       {ref,"30ec8f7daa27956863e23e18c33f66ea297b982a"}},
+       {ref,"0268d9ec4677a9a590f10f27a5e5b18470681d94"}},
   0},
- {<<"gun">>,
-  {git,"https://github.com/emqx/gun",
-       {ref,"4faea40b9a8ca1eac5288355f8202e0cea379d50"}},
-  1},
+ {<<"gun">>,{pkg,<<"gun">>,<<"2.1.0">>},1},
  {<<"ranch">>,
   {git,"https://github.com/ninenines/ranch",
        {ref,"a692f44567034dacf5efcaa24a24183788594eb7"}},
@@ -29,8 +26,10 @@
 [
 {pkg_hash,[
  {<<"gpb">>, <<"72E229C242D252D690ADDCFD04A6416C26C4D4D2C3521E05570A7A78B48D3BD1">>},
- {<<"gproc">>, <<"F1DF0364423539CF0B80E8201C8B1839E229E5F9B3CCB944C5834626998F5B8C">>}]},
+ {<<"gproc">>, <<"F1DF0364423539CF0B80E8201C8B1839E229E5F9B3CCB944C5834626998F5B8C">>},
+ {<<"gun">>, <<"B4E4CBBF3026D21981C447E9E7CA856766046EFF693720BA43114D7F5DE36E87">>}]},
 {pkg_hash_ext,[
  {<<"gpb">>, <<"C05C9AEA9E25BD341367A43B3D3EB68E951563911072259C5EC4CB6642F4EF22">>},
- {<<"gproc">>, <<"905088E32E72127ED9466F0BAC0D8E65704CA5E73EE5A62CB073C3117916D507">>}]}
+ {<<"gproc">>, <<"905088E32E72127ED9466F0BAC0D8E65704CA5E73EE5A62CB073C3117916D507">>},
+ {<<"gun">>, <<"52FC7FC246BFC3B00E01AEA1C2854C70A366348574AB50C57DFE796D24A0101D">>}]}
 ].
