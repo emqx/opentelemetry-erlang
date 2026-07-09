@@ -50,6 +50,13 @@
 
 -define(BAGGAGE_HEADER, <<"baggage">>).
 
+%% Limits recommended by the W3C Baggage specification and applied by the
+%% other OpenTelemetry SDK implementations (Java SDK 1.62.0
+%% `W3CBaggagePropagator`, Go `propagation/baggage.go`, .NET
+%% `BaggagePropagator.cs`, C++ `baggage.h`).
+-define(MAX_BAGGAGE_BYTES, 8192).
+-define(MAX_BAGGAGE_ENTRIES, 180).
+
 fields(_) ->
     [?BAGGAGE_HEADER].
 
@@ -80,14 +87,69 @@ extract(Ctx, Carrier, _CarrierKeysFun, CarrierGet, _Options) ->
         undefined ->
             Ctx;
         String ->
-            Pairs = string:lexemes(String, [$,]),
-            DecodedBaggage =
-                lists:foldl(fun(Pair, Acc) ->
-                                    [Key, Value] = string:split(Pair, "="),
-                                    Acc#{decode_key(Key) => decode_value(Value)}
+            extract_baggage(String, Ctx)
+    end.
 
-                            end, #{}, Pairs),
-            otel_baggage:set_to(Ctx, DecodedBaggage)
+%% A binary or list header is attacker-controlled content, so extraction must
+%% never crash on it: oversized headers, lists that aren't valid iolists, and
+%% content `string:lexemes/2' rejects are all treated as "missing" and ignored
+%% while the byte cap is enforced. A carrier value that isn't a binary or list
+%% violates the TextMap carrier contract and is rejected loudly instead.
+extract_baggage(String, Ctx) when is_binary(String); is_list(String) ->
+    case header_size(String) of
+        missing ->
+            Ctx;
+        Size when Size > ?MAX_BAGGAGE_BYTES ->
+            Ctx;
+        _ ->
+            case safe_lexemes(String) of
+                Pairs when is_list(Pairs) ->
+                    otel_baggage:set_to(Ctx, decode_pairs(Pairs, #{}, 0));
+                _ ->
+                    Ctx
+            end
+    end;
+extract_baggage(Other, _Ctx) ->
+    error({invalid_baggage_header, Other}).
+
+header_size(String) when is_binary(String) ->
+    byte_size(String);
+header_size(String) when is_list(String) ->
+    try iolist_size(String) of
+        Size -> Size
+    catch
+        error:badarg -> missing
+    end.
+
+%% `string:lexemes/2' raises (badarg on invalid UTF-8, function_clause on
+%% non-chardata) instead of returning an error tuple, so wrap it: content the
+%% propagator can't tokenize is treated as "missing" rather than crashing.
+safe_lexemes(String) ->
+    try string:lexemes(String, [$,])
+    catch
+        error:_ -> missing
+    end.
+
+decode_pairs([], Acc, _N) ->
+    Acc;
+decode_pairs(_Pairs, Acc, N) when N >= ?MAX_BAGGAGE_ENTRIES ->
+    Acc;
+decode_pairs([Pair | Rest], Acc, N) ->
+    case string:split(Pair, "=") of
+        [Key, Value] ->
+            %% `decode_key/1' and `decode_value/1' throw on invalid percent
+            %% encoding, so a single malformed pair must not abort extraction
+            %% of the whole header. Decode the pair in isolation and skip it
+            %% on any failure, like a pair with no `='.
+            try {decode_key(Key), decode_value(Value)} of
+                {DecodedKey, DecodedValue} ->
+                    decode_pairs(Rest, Acc#{DecodedKey => DecodedValue}, N + 1)
+            catch
+                _:_ ->
+                    decode_pairs(Rest, Acc, N + 1)
+            end;
+        _ ->
+            decode_pairs(Rest, Acc, N + 1)
     end.
 
 %%
@@ -115,9 +177,20 @@ decode_key(Key) ->
     percent_decode(string:trim(otel_utils:assert_to_binary(Key))).
 
 decode_value(ValueAndMetadata) ->
-    [Value | MetadataList] = string:lexemes(ValueAndMetadata, [$;]),
+    %% `string:split/3' with `all' preserves empty segments, unlike
+    %% `string:lexemes/2' which drops them. An empty value (`k=') is valid by
+    %% the W3C grammar (`value = *baggage-octet') and must decode to an empty
+    %% value rather than crashing the `[Value | _] = []' match, and a leading
+    %% `;' (`k=;p') must keep that empty value instead of misparsing `p' as
+    %% it. The first segment is always the value; the rest are metadata.
+    [Value | MetadataList] = string:split(ValueAndMetadata, ";", all),
     {string_decode(Value), lists:filtermap(fun metadata_decode/1, MetadataList)}.
 
+metadata_decode(<<>>) ->
+    %% an empty segment (consecutive or trailing `;') is not a property
+    false;
+metadata_decode([]) ->
+    false;
 metadata_decode(Metadata) ->
     case string:split(Metadata, "=") of
         [MetadataKey] ->
