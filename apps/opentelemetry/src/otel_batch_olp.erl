@@ -469,7 +469,7 @@ export({ExporterModule, ExporterState}, Resource, Tab, ExtConfig, Signal) ->
             %% log events produced by otel_log_handler are not lost in case otel_log_handler
             %% is not functioning properly.
             ?LOG_ERROR("~p exporter ~p failed with exception: ~p:~p, stacktrace: ~p",
-                       [Signal, Class, Reason, otel_utils:stack_without_args(St)]),
+                       [Signal, ExporterModule, Class, Reason, otel_utils:stack_without_args(St)]),
             error
     end.
 
