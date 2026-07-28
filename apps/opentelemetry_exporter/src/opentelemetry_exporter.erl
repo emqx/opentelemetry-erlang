@@ -184,7 +184,7 @@ export(traces, _Tab, _Resource, #state{protocol=http_json}) ->
     {error, unimplemented};
 export(traces, Tab, Resource, #state{protocol=http_protobuf,
                                      httpc_profile=HttpcProfile,
-                                     headers=Headers,
+                                     headers=Headers0,
                                      compression=Compression,
                                      timeout_ms=TimeoutMs,
                                      endpoint=URL,
@@ -195,12 +195,13 @@ export(traces, Tab, Resource, #state{protocol=http_protobuf,
         ProtoMap ->
             Proto = opentelemetry_exporter_trace_service_pb:encode_msg(ProtoMap,
                                                                        export_trace_service_request),
-            {NewHeaders, NewProto} =
+            Headers1 = render_headers(Headers0),
+            {Headers, NewProto} =
                 case Compression of
-                    gzip -> {[{"content-encoding", "gzip"} | Headers], zlib:gzip(Proto)};
-                    _ -> {Headers, Proto}
+                    gzip -> {[{"content-encoding", "gzip"} | Headers1], zlib:gzip(Proto)};
+                    _ -> {Headers1, Proto}
                 end,
-            case httpc:request(post, {URL, NewHeaders, "application/x-protobuf", NewProto},
+            case httpc:request(post, {URL, Headers, "application/x-protobuf", NewProto},
                                [{ssl, SSLOptions}, {timeout, TimeoutMs}], [], HttpcProfile) of
                 {ok, {{_, Code, _}, _, _}} when Code >= 200 andalso Code =< 202 ->
                     ok;
@@ -439,9 +440,15 @@ headers_to_grpc_metadata(Headers) ->
 
 %% make all headers into list strings
 headers(List) when is_list(List) ->
-    [{unicode:characters_to_list(X), unicode:characters_to_list(Y)} || {X, Y} <- List];
+    [normalize_parsed_headers(X, Y) || {X, Y} <- List];
 headers(_) ->
     [].
+
+%% happens during initialization; not render time.
+normalize_parsed_headers(Header, Val) when is_function(Val, 0) ->
+    {unicode:characters_to_list(Header), Val};
+normalize_parsed_headers(Header, Val) ->
+    {unicode:characters_to_list(Header), unicode:characters_to_list(Val)}.
 
 recompose_endpoint(Endpoint) ->
     case parse_endpoint(Endpoint) of
@@ -500,6 +507,16 @@ app_env_opts() ->
                          ConfigMapping),
     AppEnv = application:get_all_env(opentelemetry_exporter),
     otel_configuration:merge_list_with_environment(ConfigMapping, AppEnv, Config).
+
+render_headers(Headers0) ->
+    lists:map(
+      fun({Header, Fn}) when is_function(Fn, 0) ->
+              {Header, unicode:characters_to_list(Fn())};
+         ({Header, Val}) ->
+              {Header, Val}
+      end,
+      Headers0
+     ).
 
 config_mapping() ->
     [
