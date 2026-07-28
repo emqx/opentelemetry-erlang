@@ -256,6 +256,35 @@ export(logs, {Tab, Config}, Resource, #state{channel=Channel,
                     {error, Reason}
             end
     end;
+export(logs, {Tab, Config}, Resource, #state{protocol=http_protobuf,
+                                             httpc_profile=HttpcProfile,
+                                             headers=Headers0,
+                                             compression=Compression,
+                                             timeout_ms=TimeoutMs,
+                                             endpoint=URL,
+                                             ssl_options=SSLOptions}) ->
+    case otel_otlp_logs:to_proto(Tab, Resource, Config) of
+        empty ->
+            ok;
+        ProtoMap ->
+            Proto = opentelemetry_exporter_logs_service_pb:encode_msg(ProtoMap,
+                                                                     export_logs_service_request),
+            Headers1 = render_headers(Headers0),
+            {Headers, NewProto} =
+                case Compression of
+                    gzip -> {[{"content-encoding", "gzip"} | Headers1], zlib:gzip(Proto)};
+                    _ -> {Headers1, Proto}
+                end,
+            case httpc:request(post, {URL, Headers, "application/x-protobuf", NewProto},
+                               [{ssl, SSLOptions}, {timeout, TimeoutMs}], [], HttpcProfile) of
+                {ok, {{_, Code, _}, _, _}} when Code >= 200 andalso Code =< 202 ->
+                    ok;
+                {ok, {{_, Code, _}, _, Message}} ->
+                    {error, {Code, Message}};
+                {error, Reason} ->
+                    {error, Reason}
+            end
+    end;
 export(_, _Tab, _Resource, _State) ->
     {error, unimplemented}.
 

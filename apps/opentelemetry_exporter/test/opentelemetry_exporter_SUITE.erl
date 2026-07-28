@@ -18,8 +18,8 @@ groups() ->
     [{functional, [], [configuration, span_round_trip, ets_instrumentation_info]},
      {grpc, [], [verify_export, verify_metrics_export]},
      {grpc_gzip, [], [verify_export]},
-     {http_protobuf, [], [verify_export, dynamic_headers]},
-     {http_protobuf_gzip, [], [verify_export, dynamic_headers]}].
+     {http_protobuf, [], [verify_export, dynamic_headers_traces, dynamic_headers_logs]},
+     {http_protobuf_gzip, [], [verify_export, dynamic_headers_traces, dynamic_headers_logs]}].
 
 init_per_suite(Config) ->
     Config.
@@ -532,7 +532,7 @@ verify_export(Config) ->
 
 %% smoke test for using a dynamically rendered header (e.g.: an oauth2 token that is
 %% refereshed periodically).  focused on http_protobuf only.
-dynamic_headers(Config) ->
+dynamic_headers_traces(Config) ->
     Port = 4318,
     Compression = ?config(compression, Config),
     ARef = atomics:new(1, [{signed, false}]),
@@ -618,6 +618,62 @@ dynamic_headers(Config) ->
     trace:process(Session, self(), true, [call]),
     trace:function(Session, {httpc, request, '_'}, [], []),
     ?assertMatch(ok, opentelemetry_exporter:export(traces, Tid, Resource, State)),
+    receive
+        {event, {trace, _Pid, call, {httpc, request, Args}}} ->
+            [post, {_URL, ReqHeaders, _ContentType, _Body} | _] = Args,
+            ?assertMatch({"Authorization", "1"}, lists:keyfind("Authorization", 1, ReqHeaders)),
+            ok
+    after
+        1_000 ->
+            ct:fail({did_not_call_httpc, process_info(self(), messages)})
+    end,
+    trace:session_destroy(Session),
+    exit(Tracer, normal),
+    ok.
+
+%% smoke test for using a dynamically rendered header (e.g.: an oauth2 token that is
+%% refereshed periodically).  focused on http_protobuf only.
+dynamic_headers_logs(Config) ->
+    Port = 4318,
+    Compression = ?config(compression, Config),
+    ARef = atomics:new(1, [{signed, false}]),
+    HeaderFn = fun() ->
+        N = atomics:add_get(ARef, 1, 1),
+        integer_to_binary(N)
+    end,
+    {ok, State} = opentelemetry_exporter:init(
+                    logs,
+                    exporter_test,
+                    #{protocol => http_protobuf,
+                      compression => Compression,
+                      headers => [{"Authorization", HeaderFn}],
+                      endpoint => lists:concat(["http://localhost:",
+                                                integer_to_list(Port),
+                                                "/v1/logs"])
+                     }),
+    Tid = ets:new(log_tab, [duplicate_bag]),
+    LogHandlerConfig = #{level => debug, config => #{}},
+
+    ?assertMatch(ok, opentelemetry_exporter:export(logs, {Tid, LogHandlerConfig},
+                                                   otel_resource:create([]), State)),
+    Ts = logger:timestamp(),
+    LogEvent = #{
+        level => debug,
+        msg => {report, #{hello => world}},
+        meta => #{time => Ts}
+    },
+    true = ets:insert(Tid, {Ts, LogEvent}),
+
+    Resource = otel_resource_env_var:get_resource([]),
+    TestPid = self(),
+    Tracer = spawn_link(fun Loop() ->
+        receive X -> TestPid ! {event, X} end,
+        Loop()
+    end),
+    Session = trace:session_create(httpc_session, Tracer, []),
+    trace:process(Session, self(), true, [call]),
+    trace:function(Session, {httpc, request, '_'}, [], []),
+    ?assertMatch(ok, opentelemetry_exporter:export(logs, {Tid, LogHandlerConfig}, Resource, State)),
     receive
         {event, {trace, _Pid, call, {httpc, request, Args}}} ->
             [post, {_URL, ReqHeaders, _ContentType, _Body} | _] = Args,
