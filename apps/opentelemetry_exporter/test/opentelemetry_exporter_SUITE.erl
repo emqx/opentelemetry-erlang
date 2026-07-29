@@ -18,8 +18,8 @@ groups() ->
     [{functional, [], [configuration, span_round_trip, ets_instrumentation_info]},
      {grpc, [], [verify_export, verify_metrics_export]},
      {grpc_gzip, [], [verify_export]},
-     {http_protobuf, [], [verify_export, dynamic_headers_traces, dynamic_headers_logs]},
-     {http_protobuf_gzip, [], [verify_export, dynamic_headers_traces, dynamic_headers_logs]}].
+     {http_protobuf, [], [verify_export] ++ dynamic_headers_tests()},
+     {http_protobuf_gzip, [], [verify_export] ++ dynamic_headers_tests()}].
 
 init_per_suite(Config) ->
     Config.
@@ -56,6 +56,15 @@ end_per_group(_, _) ->
     application:stop(opentelemetry),
     application:unload(opentelemetry_exporter),
     ok.
+
+-if(?OTP_RELEASE >= 27).
+%% relies on `trace` module, unavailable in otp 26
+dynamic_headers_tests() ->
+    [dynamic_headers_traces, dynamic_headers_logs].
+-else.
+dynamic_headers_tests() ->
+    [].
+-endif.
 
 verify_metrics_export(Config) ->
     os:putenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=my-test-service,service.version=98da75ea6d38724743bf42b45565049238d86b3f,schema_url=https://opentelemetry.io/schemas/1.8.0"),
