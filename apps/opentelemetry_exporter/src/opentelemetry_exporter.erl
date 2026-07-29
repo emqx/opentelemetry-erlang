@@ -463,7 +463,7 @@ restart_grpc_client(ExporterId, Endpoint, ChannelOpts, State) ->
     end.
 
 headers_to_grpc_metadata(Headers) ->
-    lists:foldl(fun({_X, Fn}, Acc) when is_function(Fn) ->
+    lists:foldl(fun({_X, {_Fn, _Args}}, Acc) ->
                         %% these headers are only rendered during initialization for grpc,
                         %% so it doesn't fit well with dynamic http headers.
                         Acc;
@@ -478,8 +478,8 @@ headers(_) ->
     [].
 
 %% happens during initialization; not render time.
-normalize_parsed_headers(Header, Val) when is_function(Val, 0) ->
-    {unicode:characters_to_list(Header), Val};
+normalize_parsed_headers(Header, {Fn, Args}) when is_function(Fn) ->
+    {unicode:characters_to_list(Header), {Fn, Args}};
 normalize_parsed_headers(Header, Val) ->
     {unicode:characters_to_list(Header), unicode:characters_to_list(Val)}.
 
@@ -543,8 +543,8 @@ app_env_opts() ->
 
 render_headers(Headers0) ->
     lists:map(
-      fun({Header, Fn}) when is_function(Fn, 0) ->
-              {Header, unicode:characters_to_list(Fn())};
+      fun({Header, {Fn, Args}}) when is_function(Fn) ->
+              {Header, unicode:characters_to_list(apply(Fn, Args))};
          ({Header, Val}) ->
               {Header, Val}
       end,

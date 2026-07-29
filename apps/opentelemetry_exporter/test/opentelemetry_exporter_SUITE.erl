@@ -545,7 +545,7 @@ dynamic_headers_traces(Config) ->
                     exporter_test,
                     #{protocol => http_protobuf,
                       compression => Compression,
-                      headers => [{"Authorization", HeaderFn}],
+                      headers => [{"Authorization", {HeaderFn, []}}],
                       endpoint => lists:concat(["http://localhost:",
                                                 integer_to_list(Port),
                                                 "/v1/traces"])
@@ -646,7 +646,7 @@ dynamic_headers_logs(Config) ->
                     exporter_test,
                     #{protocol => http_protobuf,
                       compression => Compression,
-                      headers => [{"Authorization", HeaderFn}],
+                      headers => [{"Authorization", {HeaderFn, []}}],
                       endpoint => lists:concat(["http://localhost:",
                                                 integer_to_list(Port),
                                                 "/v1/logs"])
