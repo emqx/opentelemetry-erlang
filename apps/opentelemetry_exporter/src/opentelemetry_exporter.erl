@@ -463,7 +463,11 @@ restart_grpc_client(ExporterId, Endpoint, ChannelOpts, State) ->
     end.
 
 headers_to_grpc_metadata(Headers) ->
-    lists:foldl(fun({X, Y}, Acc) ->
+    lists:foldl(fun({_X, Fn}, Acc) when is_function(Fn) ->
+                        %% these headers are only rendered during initialization for grpc,
+                        %% so it doesn't fit well with dynamic http headers.
+                        Acc;
+                    ({X, Y}, Acc) ->
                         Acc#{unicode:characters_to_binary(X) => unicode:characters_to_binary(Y)}
                 end, #{}, Headers).
 
