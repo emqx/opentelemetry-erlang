@@ -45,35 +45,14 @@
 %% See https://www.w3.org/TR/trace-context/#tracestate-header
 %% for the limits and string requirements that make up the regexes
 -define(MAX_MEMBERS, 32).
+%% emqx fork: was
 %% re:compile("^(([a-z][_0-9a-z\-\*\/]{0,255})|([a-z0-9][_0-9a-z-*/]{0,240}@[a-z][_0-9a-z-*/]{0,13}))$")
--define(KEY_MP, {re_pattern,3,0,0,
-                 <<69,82,67,80,59,1,0,0,16,0,0,0,1,0,0,0,255,255,255,255,
-                   255,255,255,255,0,0,0,0,0,0,3,0,0,0,64,0,0,0,0,0,0,0,
-                   0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,131,0,247,
-                   27,133,0,84,0,1,133,0,76,0,2,110,0,0,0,0,0,0,0,0,0,0,
-                   0,0,254,255,255,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,110,
-                   0,0,0,0,0,164,255,3,0,0,0,128,254,255,255,7,0,0,0,0,0,
-                   0,0,0,0,0,0,0,0,0,0,0,104,0,0,0,255,120,0,76,119,0,
-                   155,133,0,149,0,3,110,0,0,0,0,0,0,255,3,0,0,0,0,254,
-                   255,255,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,110,0,0,0,0,
-                   0,164,255,3,0,0,0,128,254,255,255,7,0,0,0,0,0,0,0,0,0,
-                   0,0,0,0,0,0,0,109,0,0,0,240,29,64,110,0,0,0,0,0,0,0,0,
-                   0,0,0,0,254,255,255,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-                   110,0,0,0,0,0,164,255,3,0,0,0,128,254,255,255,7,0,0,0,
-                   0,0,0,0,0,0,0,0,0,0,0,0,0,104,0,0,0,13,120,0,149,120,
-                   0,239,25,120,0,247,0>>}).
 %% re:compile("^([ -+--<>-~]{0,255}[!-+--<>-~])$")
--define(VALUE_MP, {re_pattern,1,0,0,
-                   <<69,82,67,80,152,0,0,0,16,0,0,0,1,0,0,0,255,255,255,
-                     255,255,255,255,255,0,0,0,0,0,0,1,0,0,0,64,0,0,0,0,0,
-                     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,131,0,
-                     84,27,133,0,76,0,1,110,0,0,0,0,255,239,255,223,255,
-                     255,255,255,255,255,255,127,0,0,0,0,0,0,0,0,0,0,0,0,0,
-                     0,0,0,104,0,0,0,255,110,0,0,0,0,254,239,255,223,255,
-                     255,255,255,255,255,255,127,0,0,0,0,0,0,0,0,0,0,0,0,0,
-                     0,0,0,120,0,76,25,120,0,84,0>>}).
-
--define(IS_STRING, (is_atom(Key) orelse is_string(Key) orelse is_binary(Key))).
+%% upstream at https://github.com/open-telemetry/opentelemetry-erlang/blob/4cc1e9ba6a8004db2f4c0be87b8012da00c4db0c/apps/opentelemetry_api/src/otel_tracestate.erl#L121
+%% {ok, KeyMP} = re:compile("^[a-z0-9][a-z0-9_*/@-]{0,255}$"),
+%% {ok, ValueMP} = re:compile("^([ -+--<>-~]{0,255}[!-+--<>-~])$"),
+-define(KEY_MP, {?MODULE, key_mp}).
+-define(VALUE_MP, {?MODULE, value_mp}).
 
 -spec new() -> t().
 new() ->
@@ -132,11 +111,31 @@ encode_header(_) ->
 
 is_valid(Key, Value) ->
     try
-        re:run(Key, ?KEY_MP, [{capture, none}]) =:= match
-            andalso re:run(Value, ?VALUE_MP, [{capture, none}]) =:= match
+        re:run(Key, key_mp(), [{capture, none}]) =:= match
+            andalso re:run(Value, value_mp(), [{capture, none}]) =:= match
     catch
         _:_ ->
             false
+    end.
+
+key_mp() ->
+    case persistent_term:get(?KEY_MP, undefined) of
+        undefined ->
+            {ok, Pat} = re:compile("^[a-z0-9][a-z0-9_*/@-]{0,255}$"),
+            persistent_term:put(?KEY_MP, Pat),
+            Pat;
+        Pat ->
+            Pat
+    end.
+
+value_mp() ->
+    case persistent_term:get(?VALUE_MP, undefined) of
+        undefined ->
+            {ok, Pat} = re:compile("^([ -+--<>-~]{0,255}[!-+--<>-~])$"),
+            persistent_term:put(?VALUE_MP, Pat),
+            Pat;
+        Pat ->
+            Pat
     end.
 
 parse_pairs(Pairs) when length(Pairs) =< ?MAX_MEMBERS ->
@@ -149,8 +148,8 @@ parse_pairs([], Acc) ->
 parse_pairs([Pair | Rest], Acc) ->
     case split(string:trim(Pair)) of
         {K, V} ->
-            case re:run(K, ?KEY_MP) =/= nomatch
-                andalso re:run(V, ?VALUE_MP) =/= nomatch
+            case re:run(K, key_mp()) =/= nomatch
+                andalso re:run(V, value_mp()) =/= nomatch
             of
                 false ->
                     [];
