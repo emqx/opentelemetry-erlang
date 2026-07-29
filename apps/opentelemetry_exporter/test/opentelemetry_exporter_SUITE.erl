@@ -18,8 +18,8 @@ groups() ->
     [{functional, [], [configuration, span_round_trip, ets_instrumentation_info]},
      {grpc, [], [verify_export, verify_metrics_export]},
      {grpc_gzip, [], [verify_export]},
-     {http_protobuf, [], [verify_export]},
-     {http_protobuf_gzip, [], [verify_export]}].
+     {http_protobuf, [], [verify_export] ++ dynamic_headers_tests()},
+     {http_protobuf_gzip, [], [verify_export] ++ dynamic_headers_tests()}].
 
 init_per_suite(Config) ->
     Config.
@@ -56,6 +56,15 @@ end_per_group(_, _) ->
     application:stop(opentelemetry),
     application:unload(opentelemetry_exporter),
     ok.
+
+-if(?OTP_RELEASE >= 27).
+%% relies on `trace` module, unavailable in otp 26
+dynamic_headers_tests() ->
+    [dynamic_headers_traces, dynamic_headers_logs].
+-else.
+dynamic_headers_tests() ->
+    [].
+-endif.
 
 verify_metrics_export(Config) ->
     os:putenv("OTEL_RESOURCE_ATTRIBUTES", "service.name=my-test-service,service.version=98da75ea6d38724743bf42b45565049238d86b3f,schema_url=https://opentelemetry.io/schemas/1.8.0"),
@@ -528,4 +537,161 @@ verify_export(Config) ->
                  otel_resource:attributes(Resource)),
     ?assertMatch(ok, opentelemetry_exporter:export(traces, Tid, Resource, State)),
 
+    ok.
+
+%% smoke test for using a dynamically rendered header (e.g.: an oauth2 token that is
+%% refereshed periodically).  focused on http_protobuf only.
+dynamic_headers_traces(Config) ->
+    Port = 4318,
+    Compression = ?config(compression, Config),
+    ARef = atomics:new(1, [{signed, false}]),
+    HeaderFn = fun() ->
+        N = atomics:add_get(ARef, 1, 1),
+        integer_to_binary(N)
+    end,
+    {ok, State} = opentelemetry_exporter:init(
+                    traces,
+                    exporter_test,
+                    #{protocol => http_protobuf,
+                      compression => Compression,
+                      headers => [{"Authorization", {HeaderFn, []}}],
+                      endpoint => lists:concat(["http://localhost:",
+                                                integer_to_list(Port),
+                                                "/v1/traces"])
+                     }),
+    Tid = ets:new(span_tab, [duplicate_bag, {keypos, #span.instrumentation_scope}]),
+    ?assertMatch(ok, opentelemetry_exporter:export(traces, Tid, otel_resource:create([]), State)),
+
+    TraceId = otel_id_generator:generate_trace_id(),
+    SpanId = otel_id_generator:generate_span_id(),
+
+    Events = otel_events:new(128, 128, 128),
+    ParentSpan =
+        #span{name = <<"span-1">>,
+              trace_id = TraceId,
+              span_id = SpanId,
+              kind = ?SPAN_KIND_CLIENT,
+              start_time = opentelemetry:timestamp(),
+              end_time = opentelemetry:timestamp(),
+              links = otel_links:new([], 128, 128, 128),
+              events = otel_events:add([#event{system_time_native=opentelemetry:timestamp(),
+                                               name = <<"event-1">>,
+                                               attributes = otel_attributes:new([{<<"attr-1">>, <<"value-1">>}], 128, 128)},
+                                        #event{system_time_native=opentelemetry:timestamp(),
+                                               name = <<"event-2">>,
+                                               attributes = otel_attributes:new([{<<"attr-3">>, <<"value-3">>}], 128, 128)}], Events),
+              status = #status{code=?OTEL_STATUS_UNSET,
+                               message = <<"hello I'm unset">>},
+              instrumentation_scope = #instrumentation_scope{name = <<"tracer-1">>,
+                                                             version = <<"0.0.1">>},
+              attributes = otel_attributes:new([{<<"attr-2">>, <<"value-2">>}], 128, 128)},
+    true = ets:insert(Tid, ParentSpan),
+
+    Link1 = opentelemetry:link(?start_span(<<"linked-span">>)),
+
+    ChildSpan = #span{name = <<"span-2">>,
+                      trace_id = TraceId,
+                      span_id = otel_id_generator:generate_span_id(),
+                      parent_span_id = SpanId,
+                      kind = ?SPAN_KIND_SERVER,
+                      start_time = opentelemetry:timestamp(),
+                      end_time = opentelemetry:timestamp(),
+                      links = otel_links:new([Link1], 128, 128, 128),
+                      events = otel_events:add([#event{system_time_native=opentelemetry:timestamp(),
+                                                       name = <<"event-1">>,
+                                                       attributes = otel_attributes:new([{<<"attr-1">>, <<"value-1">>}], 128, 128)},
+                                                #event{system_time_native=opentelemetry:timestamp(),
+                                                       name = <<"event-2">>,
+                                                       attributes = otel_attributes:new([{<<"attr-3">>, <<"value-3">>}], 128, 128)}], Events),
+                      status = #status{code=?OTEL_STATUS_ERROR,
+                                       message = <<"hello I'm an error">>},
+                      instrumentation_scope = #instrumentation_scope{name = <<"tracer-1">>,
+                                                                     version = <<"0.0.1">>},
+                      attributes = otel_attributes:new([
+                                                        {atom_attr, atom_value},
+                                                        {<<"attr-2">>, <<"value-2">>},
+                                                        {<<"map-key-1">>, #{<<"map-key-1">> => 123}},
+                                                        {<<"proplist-key-1">>, [{proplistkey1, 456}, {<<"proplist-key-2">>, 9.345}]},
+                                                        {<<"list-key-1">>, [listkey1, 123, <<"list-value-3">>]},
+                                                        {<<"tuple-key-1">>, {a, 123, [456, {1, 2}]}}
+                                                       ], 128, 128)},
+    true = ets:insert(Tid, ChildSpan),
+
+    Resource = otel_resource_env_var:get_resource([]),
+    TestPid = self(),
+    Tracer = spawn_link(fun Loop() ->
+        receive X -> TestPid ! {event, X} end,
+        Loop()
+    end),
+    Session = trace:session_create(httpc_session, Tracer, []),
+    trace:process(Session, self(), true, [call]),
+    trace:function(Session, {httpc, request, '_'}, [], []),
+    ?assertMatch(ok, opentelemetry_exporter:export(traces, Tid, Resource, State)),
+    receive
+        {event, {trace, _Pid, call, {httpc, request, Args}}} ->
+            [post, {_URL, ReqHeaders, _ContentType, _Body} | _] = Args,
+            ?assertMatch({"Authorization", "1"}, lists:keyfind("Authorization", 1, ReqHeaders)),
+            ok
+    after
+        1_000 ->
+            ct:fail({did_not_call_httpc, process_info(self(), messages)})
+    end,
+    trace:session_destroy(Session),
+    exit(Tracer, normal),
+    ok.
+
+%% smoke test for using a dynamically rendered header (e.g.: an oauth2 token that is
+%% refereshed periodically).  focused on http_protobuf only.
+dynamic_headers_logs(Config) ->
+    Port = 4318,
+    Compression = ?config(compression, Config),
+    ARef = atomics:new(1, [{signed, false}]),
+    HeaderFn = fun() ->
+        N = atomics:add_get(ARef, 1, 1),
+        integer_to_binary(N)
+    end,
+    {ok, State} = opentelemetry_exporter:init(
+                    logs,
+                    exporter_test,
+                    #{protocol => http_protobuf,
+                      compression => Compression,
+                      headers => [{"Authorization", {HeaderFn, []}}],
+                      endpoint => lists:concat(["http://localhost:",
+                                                integer_to_list(Port),
+                                                "/v1/logs"])
+                     }),
+    Tid = ets:new(log_tab, [duplicate_bag]),
+    LogHandlerConfig = #{level => debug, config => #{}},
+
+    ?assertMatch(ok, opentelemetry_exporter:export(logs, {Tid, LogHandlerConfig},
+                                                   otel_resource:create([]), State)),
+    Ts = logger:timestamp(),
+    LogEvent = #{
+        level => debug,
+        msg => {report, #{hello => world}},
+        meta => #{time => Ts}
+    },
+    true = ets:insert(Tid, {Ts, LogEvent}),
+
+    Resource = otel_resource_env_var:get_resource([]),
+    TestPid = self(),
+    Tracer = spawn_link(fun Loop() ->
+        receive X -> TestPid ! {event, X} end,
+        Loop()
+    end),
+    Session = trace:session_create(httpc_session, Tracer, []),
+    trace:process(Session, self(), true, [call]),
+    trace:function(Session, {httpc, request, '_'}, [], []),
+    ?assertMatch(ok, opentelemetry_exporter:export(logs, {Tid, LogHandlerConfig}, Resource, State)),
+    receive
+        {event, {trace, _Pid, call, {httpc, request, Args}}} ->
+            [post, {_URL, ReqHeaders, _ContentType, _Body} | _] = Args,
+            ?assertMatch({"Authorization", "1"}, lists:keyfind("Authorization", 1, ReqHeaders)),
+            ok
+    after
+        1_000 ->
+            ct:fail({did_not_call_httpc, process_info(self(), messages)})
+    end,
+    trace:session_destroy(Session),
+    exit(Tracer, normal),
     ok.

@@ -184,7 +184,7 @@ export(traces, _Tab, _Resource, #state{protocol=http_json}) ->
     {error, unimplemented};
 export(traces, Tab, Resource, #state{protocol=http_protobuf,
                                      httpc_profile=HttpcProfile,
-                                     headers=Headers,
+                                     headers=Headers0,
                                      compression=Compression,
                                      timeout_ms=TimeoutMs,
                                      endpoint=URL,
@@ -195,12 +195,13 @@ export(traces, Tab, Resource, #state{protocol=http_protobuf,
         ProtoMap ->
             Proto = opentelemetry_exporter_trace_service_pb:encode_msg(ProtoMap,
                                                                        export_trace_service_request),
-            {NewHeaders, NewProto} =
+            Headers1 = render_headers(Headers0),
+            {Headers, NewProto} =
                 case Compression of
-                    gzip -> {[{"content-encoding", "gzip"} | Headers], zlib:gzip(Proto)};
-                    _ -> {Headers, Proto}
+                    gzip -> {[{"content-encoding", "gzip"} | Headers1], zlib:gzip(Proto)};
+                    _ -> {Headers1, Proto}
                 end,
-            case httpc:request(post, {URL, NewHeaders, "application/x-protobuf", NewProto},
+            case httpc:request(post, {URL, Headers, "application/x-protobuf", NewProto},
                                [{ssl, SSLOptions}, {timeout, TimeoutMs}], [], HttpcProfile) of
                 {ok, {{_, Code, _}, _, _}} when Code >= 200 andalso Code =< 202 ->
                     ok;
@@ -251,6 +252,35 @@ export(logs, {Tab, Config}, Resource, #state{channel=Channel,
             case opentelemetry_logs_service:export(ExportRequest, Metadata, Opts) of
                 {ok, _Response, _ResponseMetadata} ->
                     ok;
+                {error, Reason} ->
+                    {error, Reason}
+            end
+    end;
+export(logs, {Tab, Config}, Resource, #state{protocol=http_protobuf,
+                                             httpc_profile=HttpcProfile,
+                                             headers=Headers0,
+                                             compression=Compression,
+                                             timeout_ms=TimeoutMs,
+                                             endpoint=URL,
+                                             ssl_options=SSLOptions}) ->
+    case otel_otlp_logs:to_proto(Tab, Resource, Config) of
+        empty ->
+            ok;
+        ProtoMap ->
+            Proto = opentelemetry_exporter_logs_service_pb:encode_msg(ProtoMap,
+                                                                     export_logs_service_request),
+            Headers1 = render_headers(Headers0),
+            {Headers, NewProto} =
+                case Compression of
+                    gzip -> {[{"content-encoding", "gzip"} | Headers1], zlib:gzip(Proto)};
+                    _ -> {Headers1, Proto}
+                end,
+            case httpc:request(post, {URL, Headers, "application/x-protobuf", NewProto},
+                               [{ssl, SSLOptions}, {timeout, TimeoutMs}], [], HttpcProfile) of
+                {ok, {{_, Code, _}, _, _}} when Code >= 200 andalso Code =< 202 ->
+                    ok;
+                {ok, {{_, Code, _}, _, Message}} ->
+                    {error, {Code, Message}};
                 {error, Reason} ->
                     {error, Reason}
             end
@@ -433,15 +463,25 @@ restart_grpc_client(ExporterId, Endpoint, ChannelOpts, State) ->
     end.
 
 headers_to_grpc_metadata(Headers) ->
-    lists:foldl(fun({X, Y}, Acc) ->
+    lists:foldl(fun({_X, {_Fn, _Args}}, Acc) ->
+                        %% these headers are only rendered during initialization for grpc,
+                        %% so it doesn't fit well with dynamic http headers.
+                        Acc;
+                    ({X, Y}, Acc) ->
                         Acc#{unicode:characters_to_binary(X) => unicode:characters_to_binary(Y)}
                 end, #{}, Headers).
 
 %% make all headers into list strings
 headers(List) when is_list(List) ->
-    [{unicode:characters_to_list(X), unicode:characters_to_list(Y)} || {X, Y} <- List];
+    [normalize_parsed_headers(X, Y) || {X, Y} <- List];
 headers(_) ->
     [].
+
+%% happens during initialization; not render time.
+normalize_parsed_headers(Header, {Fn, Args}) when is_function(Fn) ->
+    {unicode:characters_to_list(Header), {Fn, Args}};
+normalize_parsed_headers(Header, Val) ->
+    {unicode:characters_to_list(Header), unicode:characters_to_list(Val)}.
 
 recompose_endpoint(Endpoint) ->
     case parse_endpoint(Endpoint) of
@@ -500,6 +540,16 @@ app_env_opts() ->
                          ConfigMapping),
     AppEnv = application:get_all_env(opentelemetry_exporter),
     otel_configuration:merge_list_with_environment(ConfigMapping, AppEnv, Config).
+
+render_headers(Headers0) ->
+    lists:map(
+      fun({Header, {Fn, Args}}) when is_function(Fn) ->
+              {Header, unicode:characters_to_list(apply(Fn, Args))};
+         ({Header, Val}) ->
+              {Header, Val}
+      end,
+      Headers0
+     ).
 
 config_mapping() ->
     [
