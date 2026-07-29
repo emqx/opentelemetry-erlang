@@ -28,6 +28,8 @@
 %%%-------------------------------------------------------------------------
 -module(opentelemetry).
 
+-compile([{no_auto_import, [link/2]}]).
+
 -export([start_tracer_provider/2,
          start_default_tracer_provider/0,
          stop_default_tracer_provider/0,

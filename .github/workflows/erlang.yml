@@ -17,26 +17,23 @@ jobs:
     name: Test on OTP ${{ matrix.otp_version }} and ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        otp_version: ['26.0', '25.0.3', '24.1.2']
-        rebar3_version: ['3.22.1']
-        os: [ubuntu-20.04]
-        include:
-          - otp_version: '23.3'
-            rebar3_version: '3.17.0'
-            os: ubuntu-20.04
+        otp_version: ['26.2.5.14', '27.3.4.2', '28.4.1']
+        rebar3_version: ['3.25.1']
+        os: [ubuntu-26.04]
     env:
       OTP_VERSION: ${{ matrix.otp_version }}
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v7
     - name: Run Collector
-      run: docker-compose up -d
+      run: docker compose up -d
     - uses: erlef/setup-beam@v1
       with:
         otp-version: ${{ matrix.otp_version }}
         rebar3-version: ${{ matrix.rebar3_version }}
         version-type: 'strict'
-    - uses: actions/cache@v2
+    - uses: actions/cache@v6
       name: Cache
       with:
         path: |
@@ -90,18 +87,19 @@ jobs:
     name: Dialyze on OTP ${{ matrix.otp_version }} and ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        otp_version: ['26.0']
-        rebar3_version: ['3.22.1']
-        os: [ubuntu-20.04]
+        otp_version: ['28.4.1']
+        rebar3_version: ['3.25.1']
+        os: [ubuntu-26.04]
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v7
     - uses: erlef/setup-beam@v1
       with:
         otp-version: ${{ matrix.otp_version }}
         rebar3-version: ${{ matrix.rebar3_version }}
         version-type: 'strict'
-    - uses: actions/cache@v2
+    - uses: actions/cache@v6
       name: Cache
       with:
         path: |
@@ -118,18 +116,19 @@ jobs:
     name: EqWAlizer on OTP ${{ matrix.otp_version }} and ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        otp_version: ['26.0']
-        rebar3_version: ['3.22.1']
-        os: [ubuntu-20.04]
+        otp_version: ['28.4.1']
+        rebar3_version: ['3.25.1']
+        os: [ubuntu-26.04]
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v7
     - uses: erlef/setup-beam@v1
       with:
         otp-version: ${{ matrix.otp_version }}
         rebar3-version: ${{ matrix.rebar3_version }}
         version-type: 'strict'
-    - uses: actions/cache@v2
+    - uses: actions/cache@v6
       name: Cache
       with:
         path: |
@@ -144,4 +143,6 @@ jobs:
     - name: Compile
       run: rebar3 compile
     - name: eqWAlizer
+      env:
+        DEBUG: 1
       run: ./elp eqwalize-all

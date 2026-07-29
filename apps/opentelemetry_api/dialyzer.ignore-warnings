@@ -1,1 +1,8 @@
 src/otel_tracer_provider.erl:39:5: Unknown function otel_tracer_provider_sup:start/2
+# emqx fork:
+src/opentelemetry.erl:172:14: Unknown function otel_configuration:merge_with_os/1
+src/opentelemetry.erl:185:13: Unknown function otel_span_limits:set/1
+src/opentelemetry.erl:187:24: Unknown function otel_resource_detector:get_resource/0
+src/opentelemetry.erl:188:22: Unknown function otel_tracer_provider_sup:start/3
+src/opentelemetry.erl:199:14: Unknown function otel_tracer_provider_sup:stop/1
+src/opentelemetry.erl:201:9: Unknown function otel_span_limits:cleanup_persistent_terms/0
